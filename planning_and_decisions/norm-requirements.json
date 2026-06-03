@@ -1,0 +1,580 @@
+{
+  "tool": "norm",
+  "spec_version": "0.2.0",
+  "platform": "macOS (Apple Silicon), macOS 12+",
+  "description": "Pass/fail requirements for the norm CLI: a local, encrypted screen+AX recorder with in-process Gemma-4 (mlx-vlm) reporting. Each requirement is a black-box test on CLI behavior: invocation, I/O, side effects, and exit code.",
+  "conventions": {
+    "prerequisites": [
+      "macOS 12+ on Apple Silicon",
+      "norm runs non-sandboxed (required to read other apps' AX trees)",
+      "macOS Accessibility and Screen Recording permissions granted to the norm/host binary",
+      "Python runtime with macapptree (capture), mlx-vlm (inference), imagehash (dedupe), SQLCipher + AES-256-GCM (storage)"
+    ],
+    "exit_codes": {
+      "0": "success",
+      "1": "runtime_error (unexpected failure during a valid operation)",
+      "2": "usage_error (unknown command/subcommand, missing/invalid argument)",
+      "3": "auth_error (store locked, wrong passphrase, missing/denied Keychain key)",
+      "4": "model_error (MLX weights unavailable offline, invalid model_ref, or inference failure)",
+      "5": "not_found (no captures/preprocess output/record id in range)",
+      "6": "environment_error (missing macOS Accessibility or Screen Recording permission, macapptree unavailable)"
+    },
+    "inference": {
+      "library": "mlx-vlm",
+      "mode": "in-process",
+      "server": "none (no daemon, no socket, no HTTP endpoint started or contacted)",
+      "model_ref": "MLX repo id or local path",
+      "weights_cache": "~/.cache/huggingface (first load downloads; later loads are local)",
+      "call_pattern": "load(model_ref) -> apply_chat_template(...) -> generate(model, processor, prompt, image=[...])",
+      "modalities": "text + image; decrypted frames passed as in-memory PIL images"
+    },
+    "config": {
+      "path": "~/.norm",
+      "format": "TOML",
+      "precedence": "explicit CLI flag > ~/.norm value > built-in default",
+      "keys": [
+        "interval_minutes",
+        "idle_threshold_seconds",
+        "data_dir",
+        "phash_threshold",
+        "model",
+        "window_k",
+        "stride_j",
+        "max_tokens",
+        "prompt_preprocess",
+        "prompt_interval"
+      ]
+    },
+    "defaults": {
+      "interval_minutes": 5,
+      "idle_threshold_seconds": 300,
+      "data_dir": "~/Library/Application Support/norm",
+      "phash_threshold": 4,
+      "model": "mlx-community/gemma-4-e4b-it-4bit",
+      "window_k": 6,
+      "stride_j": 3,
+      "max_tokens": 512,
+      "prompt_preprocess": "What was this user doing?",
+      "prompt_interval": "What did the user do over the time interval?"
+    },
+    "encryption": {
+      "index": "SQLCipher (AES-256)",
+      "blobs": "AES-256-GCM",
+      "key_custody": "random 256-bit data key in macOS Keychain (norm-scoped ACL), optionally wrapped by a norm passphrase via Argon2id",
+      "login_password_used": false,
+      "elevated_privileges_used": false
+    },
+    "time_args": {
+      "from": "--from accepts ISO-8601 or relative (e.g. '-24h', 'yesterday')",
+      "to": "--to accepts ISO-8601 or 'now'",
+      "last": "--last accepts a duration like '24h', '7d'"
+    },
+    "global_flags": ["--help/-h", "--version", "--config <path>", "--json", "--verbose/-v", "--quiet/-q"]
+  },
+  "requirements": [
+    {
+      "id": "REQ-GLOBAL-001",
+      "category": "global",
+      "title": "Version flag",
+      "command": "norm --version",
+      "preconditions": [],
+      "pass_if": ["stdout matches a semantic version string", "exit_code == 0", "stderr is empty"],
+      "fail_if": ["exit_code != 0", "no version printed"]
+    },
+    {
+      "id": "REQ-GLOBAL-002",
+      "category": "global",
+      "title": "Top-level help",
+      "command": "norm --help",
+      "preconditions": [],
+      "pass_if": ["stdout lists commands: init, record, report, status, list, show, export, prune, config, passwd", "exit_code == 0"],
+      "fail_if": ["exit_code != 0", "any documented command missing from help"]
+    },
+    {
+      "id": "REQ-GLOBAL-003",
+      "category": "global",
+      "title": "No subcommand prints usage and fails",
+      "command": "norm",
+      "preconditions": [],
+      "pass_if": ["usage text on stderr", "exit_code == 2"],
+      "fail_if": ["exit_code == 0", "exit_code != 2"]
+    },
+    {
+      "id": "REQ-GLOBAL-004",
+      "category": "global",
+      "title": "Unknown command is a usage error",
+      "command": "norm frobnicate",
+      "preconditions": [],
+      "pass_if": ["stderr names 'frobnicate' as unknown", "exit_code == 2"],
+      "fail_if": ["exit_code != 2"]
+    },
+    {
+      "id": "REQ-GLOBAL-005",
+      "category": "global",
+      "title": "Config precedence: CLI flag overrides config file",
+      "command": "norm --config ./test.norm record --once --interval 1",
+      "preconditions": ["./test.norm sets interval_minutes = 9"],
+      "pass_if": ["effective interval is 1 (CLI), not 9 (config)", "exit_code == 0 on a successful single capture"],
+      "fail_if": ["config value 9 is used instead of CLI value 1"]
+    },
+    {
+      "id": "REQ-ARCH-001",
+      "category": "architecture",
+      "title": "Inference is in-process; no local inference server or socket",
+      "command": "run `norm report preprocess` and `norm report interval` while monitoring sockets/processes",
+      "preconditions": ["captures and model weights available"],
+      "pass_if": [
+        "norm opens no listening socket for inference",
+        "norm makes no connection to any local or remote model-server endpoint (e.g. an mlx_vlm.server or other localhost inference port)",
+        "inference occurs via mlx-vlm load()/generate() inside the norm process"
+      ],
+      "fail_if": ["norm starts or connects to any local/remote inference server", "an external daemon is required for inference"]
+    },
+    {
+      "id": "REQ-INIT-001",
+      "category": "init",
+      "title": "init creates config, data dir, and encryption key",
+      "command": "norm init",
+      "preconditions": ["~/.norm does not exist", "data_dir does not exist"],
+      "pass_if": [
+        "~/.norm created as valid TOML containing all default keys",
+        "data_dir created",
+        "an encrypted SQLCipher index exists in data_dir",
+        "a norm data key exists in the Keychain",
+        "exit_code == 0"
+      ],
+      "fail_if": ["exit_code != 0", "the data key is derived from or equal to the login password", "any plaintext capture/index file is written"]
+    },
+    {
+      "id": "REQ-INIT-002",
+      "category": "init",
+      "title": "init refuses to clobber an existing store without --force",
+      "command": "norm init",
+      "preconditions": ["data_dir already initialized"],
+      "pass_if": ["no existing data overwritten", "stderr explains store exists and suggests --force", "exit_code == 2"],
+      "fail_if": ["existing data destroyed", "exit_code == 0"]
+    },
+    {
+      "id": "REQ-INIT-003",
+      "category": "init",
+      "title": "init with passphrase wraps the data key",
+      "command": "norm init --passphrase",
+      "preconditions": ["no existing store"],
+      "pass_if": [
+        "passphrase prompted on stdin (not echoed) or read from NORM_PASSPHRASE",
+        "stored key material wrapped via Argon2id with the passphrase",
+        "exit_code == 0"
+      ],
+      "fail_if": ["passphrase echoed to terminal", "passphrase stored in plaintext"]
+    },
+    {
+      "id": "REQ-RECORD-001",
+      "category": "record",
+      "title": "record --once stores one frame when present and changed",
+      "command": "norm record --once",
+      "preconditions": [
+        "store initialized and unlockable",
+        "Accessibility and Screen Recording permissions granted",
+        "HIDIdleTime < idle_threshold",
+        "screen content differs from the last stored capture"
+      ],
+      "pass_if": [
+        "exactly one new capture row written",
+        "row contains ts, active_app, phash, ax_hash, encrypted image_ref, encrypted ax_ref",
+        "image/AX blobs on disk are ciphertext (do not parse as PNG/JSON)",
+        "exit_code == 0"
+      ],
+      "fail_if": ["more than one row written", "any blob written in plaintext", "exit_code != 0"]
+    },
+    {
+      "id": "REQ-RECORD-002",
+      "category": "record",
+      "title": "record skips capture while idle and stamps the gap",
+      "command": "norm record --once --idle-threshold 1",
+      "preconditions": ["HIDIdleTime >= 1 (idle)"],
+      "pass_if": ["no capture blob stored for the idle tick", "next stored capture has idle_gap_s >= observed idle", "exit_code == 0"],
+      "fail_if": ["a capture is stored during idle", "idle_gap_s not recorded"]
+    },
+    {
+      "id": "REQ-RECORD-003",
+      "category": "record",
+      "title": "record dedupes an unchanged frame (phash + AX equality)",
+      "command": "norm record --once",
+      "preconditions": ["user active", "phash within threshold AND ax_hash equal to last stored capture"],
+      "pass_if": ["no new capture row", "prior capture duration_s extended", "exit_code == 0"],
+      "fail_if": ["duplicate blob stored", "prior duration_s unchanged"]
+    },
+    {
+      "id": "REQ-RECORD-004",
+      "category": "record",
+      "title": "record stores a new frame when only one of phash/AX changes",
+      "command": "norm record --once",
+      "preconditions": ["phash within threshold but ax_hash differs (or vice versa)"],
+      "pass_if": ["a new capture row IS stored (dedupe requires BOTH)", "exit_code == 0"],
+      "fail_if": ["frame incorrectly dropped as duplicate"]
+    },
+    {
+      "id": "REQ-RECORD-005",
+      "category": "record",
+      "title": "record honors --interval in the persistent loop",
+      "command": "norm record --interval 1",
+      "preconditions": ["store unlockable", "permissions granted"],
+      "pass_if": ["capture attempts roughly every 1 minute (+/- slack)", "runs in foreground until interrupted"],
+      "fail_if": ["interval ignored", "process exits immediately without looping"]
+    },
+    {
+      "id": "REQ-RECORD-006",
+      "category": "record",
+      "title": "record shuts down cleanly on SIGINT/SIGTERM",
+      "command": "norm record  (then SIGINT)",
+      "preconditions": ["record loop running"],
+      "pass_if": ["in-flight writes flushed and store locked on signal", "data key removed from process memory", "exit_code == 0"],
+      "fail_if": ["store left inconsistent", "exit_code != 0 on graceful stop"]
+    },
+    {
+      "id": "REQ-RECORD-007",
+      "category": "record",
+      "title": "record fails fast without OS permissions",
+      "command": "norm record --once",
+      "preconditions": ["Screen Recording OR Accessibility permission not granted"],
+      "pass_if": ["stderr names the missing permission and how to grant it", "no partial capture written", "exit_code == 6"],
+      "fail_if": ["exit_code != 6", "a corrupt capture is written"]
+    },
+    {
+      "id": "REQ-RECORD-008",
+      "category": "record",
+      "title": "record fails with auth error when store cannot be unlocked",
+      "command": "norm record --once",
+      "preconditions": ["Keychain key absent and no/incorrect passphrase"],
+      "pass_if": ["stderr indicates store could not be unlocked", "exit_code == 3"],
+      "fail_if": ["any data read or written", "exit_code != 3"]
+    },
+    {
+      "id": "REQ-RECORD-009",
+      "category": "record",
+      "title": "record daemon lifecycle via launchd",
+      "command": "norm record --install ; norm record --status ; norm record --stop",
+      "preconditions": ["store initialized"],
+      "pass_if": [
+        "--install registers a launchd user agent and starts it; exit_code == 0",
+        "--status reports running=true with a pid; exit_code == 0",
+        "--stop halts the agent; subsequent --status reports running=false; exit_code == 0"
+      ],
+      "fail_if": ["--install requires sudo/elevated privileges", "--stop leaves the agent running"]
+    },
+    {
+      "id": "REQ-REPORT-001",
+      "category": "report",
+      "title": "report with no subcommand prints usage and fails",
+      "command": "norm report",
+      "preconditions": [],
+      "pass_if": ["usage naming 'preprocess' and 'interval' on stderr", "exit_code == 2"],
+      "fail_if": ["exit_code != 2"]
+    },
+    {
+      "id": "REQ-PREPROCESS-001",
+      "category": "report.preprocess",
+      "title": "preprocess slides window K with stride J and writes one markdown per window",
+      "command": "norm report preprocess --window 6 --stride 3",
+      "preconditions": [">= 9 captures stored", "model weights loadable"],
+      "pass_if": [
+        "number of preprocess rows == floor((N - K) / J) + 1 for N stored captures",
+        "each row stores markdown plus window_start, window_end, capture_ids, model, prompt_id",
+        "markdown blobs stored encrypted",
+        "exit_code == 0"
+      ],
+      "fail_if": ["window/stride math wrong", "any preprocess markdown stored in plaintext"]
+    },
+    {
+      "id": "REQ-PREPROCESS-002",
+      "category": "report.preprocess",
+      "title": "preprocess passes BOTH images and AX text to the in-process generate() call",
+      "command": "norm report preprocess --window 2 --stride 2 --verbose",
+      "preconditions": ["captures available", "the generate() invocation is observable (verbose log or test seam)"],
+      "pass_if": [
+        "generate() receives in-memory image(s) for the window AND the window's AX text",
+        "the configured prompt_preprocess is included",
+        "no network socket / HTTP request to an inference server is opened",
+        "exit_code == 0"
+      ],
+      "fail_if": ["only images sent", "only AX text sent", "no prompt included", "inference performed over a socket/server"]
+    },
+    {
+      "id": "REQ-PREPROCESS-003",
+      "category": "report.preprocess",
+      "title": "preprocess is idempotent unless --force",
+      "command": "norm report preprocess  (run twice)",
+      "preconditions": ["captures unchanged between runs"],
+      "pass_if": [
+        "second run creates no duplicate rows and skips covered windows",
+        "exit_code == 0",
+        "with --force, covered windows are recomputed and overwritten"
+      ],
+      "fail_if": ["duplicate preprocess rows accumulate on re-run without --force"]
+    },
+    {
+      "id": "REQ-PREPROCESS-004",
+      "category": "report.preprocess",
+      "title": "preprocess honors --from/--to capture range",
+      "command": "norm report preprocess --from -2h --to now",
+      "preconditions": ["captures exist inside and outside the window"],
+      "pass_if": ["only captures within [from,to] appear in any window", "exit_code == 0"],
+      "fail_if": ["captures outside the range are summarized"]
+    },
+    {
+      "id": "REQ-PREPROCESS-005",
+      "category": "report.preprocess",
+      "title": "preprocess errors when the MLX model cannot be loaded",
+      "command": "norm report preprocess",
+      "preconditions": ["model weights not cached and host offline, OR model_ref invalid"],
+      "pass_if": [
+        "stderr distinguishes 'weights unavailable offline' from 'invalid model_ref' where possible",
+        "no partial/empty preprocess row committed",
+        "exit_code == 4"
+      ],
+      "fail_if": ["exit_code != 4", "an empty markdown row is stored"]
+    },
+    {
+      "id": "REQ-PREPROCESS-006",
+      "category": "report.preprocess",
+      "title": "preprocess errors when there are no captures",
+      "command": "norm report preprocess",
+      "preconditions": ["store contains zero captures"],
+      "pass_if": ["stderr states there are no captures to process", "exit_code == 5"],
+      "fail_if": ["exit_code == 0", "an empty report is produced"]
+    },
+    {
+      "id": "REQ-INTERVAL-001",
+      "category": "report.interval",
+      "title": "interval aggregates preprocess markdown over [from,to] into one markdown",
+      "command": "norm report interval --from -24h --to now",
+      "preconditions": ["preprocess rows cover the interval", "model loadable"],
+      "pass_if": [
+        "generate() receives the preprocess markdown summaries within the interval plus prompt_interval",
+        "aggregated markdown emitted to stdout by default",
+        "exit_code == 0"
+      ],
+      "fail_if": ["raw captures summarized instead of preprocess output", "exit_code != 0"]
+    },
+    {
+      "id": "REQ-INTERVAL-002",
+      "category": "report.interval",
+      "title": "interval requires a time range",
+      "command": "norm report interval",
+      "preconditions": [],
+      "pass_if": ["stderr says --from/--to (or --last) is required", "exit_code == 2"],
+      "fail_if": ["a report is produced over an unbounded range", "exit_code == 0"]
+    },
+    {
+      "id": "REQ-INTERVAL-003",
+      "category": "report.interval",
+      "title": "interval errors when no preprocess output covers the range",
+      "command": "norm report interval --last 24h",
+      "preconditions": ["captures exist but report preprocess not run for the range"],
+      "pass_if": ["stderr explains preprocess must run first and suggests --auto-preprocess", "exit_code == 5"],
+      "fail_if": ["exit_code == 0", "a misleading empty summary produced"]
+    },
+    {
+      "id": "REQ-INTERVAL-004",
+      "category": "report.interval",
+      "title": "interval --auto-preprocess runs preprocessing first",
+      "command": "norm report interval --last 24h --auto-preprocess",
+      "preconditions": ["captures exist but no preprocess output for the range", "model loadable"],
+      "pass_if": ["missing preprocess windows computed, then interval report produced", "exit_code == 0"],
+      "fail_if": ["interval still fails with exit_code 5 despite --auto-preprocess"]
+    },
+    {
+      "id": "REQ-INTERVAL-005",
+      "category": "report.interval",
+      "title": "interval --output writes to a file instead of stdout",
+      "command": "norm report interval --last 7d --output ./week.md",
+      "preconditions": ["preprocess output covers the range"],
+      "pass_if": ["./week.md created with aggregated markdown", "stdout quiet or prints only the path", "exit_code == 0"],
+      "fail_if": ["file not created", "markdown dumped to stdout despite --output"]
+    },
+    {
+      "id": "REQ-DATA-001",
+      "category": "data",
+      "title": "status reports store and daemon state without decrypting blobs",
+      "command": "norm status",
+      "preconditions": ["store initialized"],
+      "pass_if": [
+        "stdout shows data_dir, locked/unlocked, capture count, last capture ts, preprocess count, daemon state",
+        "counts come from the encrypted index, not from decrypting blobs",
+        "exit_code == 0"
+      ],
+      "fail_if": ["status decrypts blob payloads to produce counts"]
+    },
+    {
+      "id": "REQ-DATA-002",
+      "category": "data",
+      "title": "list shows captures in a range; --json is machine-readable",
+      "command": "norm list --from -6h --to now --json",
+      "preconditions": ["store unlockable", "captures in range"],
+      "pass_if": [
+        "with --json, stdout is a valid JSON array of capture metadata (id, ts, active_app, idle_gap_s, duration_s)",
+        "without --json, output is a human table",
+        "exit_code == 0"
+      ],
+      "fail_if": ["--json emits non-JSON", "captures outside the range listed"]
+    },
+    {
+      "id": "REQ-DATA-003",
+      "category": "data",
+      "title": "show returns one capture's metadata and can export its artifacts",
+      "command": "norm show <id> --export ./out",
+      "preconditions": ["store unlockable", "<id> exists"],
+      "pass_if": ["metadata for <id> printed", "with --export, decrypted PNG and AX JSON written under ./out", "exit_code == 0"],
+      "fail_if": ["a non-existent id returns exit_code 0"]
+    },
+    {
+      "id": "REQ-DATA-004",
+      "category": "data",
+      "title": "show errors on unknown id",
+      "command": "norm show 99999999",
+      "preconditions": ["store unlockable", "id does not exist"],
+      "pass_if": ["stderr indicates id not found", "exit_code == 5"],
+      "fail_if": ["exit_code != 5"]
+    },
+    {
+      "id": "REQ-DATA-005",
+      "category": "data",
+      "title": "export decrypts a range of data to a target directory",
+      "command": "norm export --from -1d --to now --out ./dump --include images,ax,reports",
+      "preconditions": ["store unlockable", "data exists in range"],
+      "pass_if": ["decrypted images, AX JSON, and preprocess markdown for the range written under ./dump", "exit_code == 0"],
+      "fail_if": ["export succeeds while store locked", "exit_code == 0 when store could not be unlocked"]
+    },
+    {
+      "id": "REQ-DATA-006",
+      "category": "data",
+      "title": "prune deletes data in a range and supports --dry-run",
+      "command": "norm prune --before -30d --dry-run",
+      "preconditions": ["store unlockable", "data older than 30d exists"],
+      "pass_if": [
+        "--dry-run lists what would be deleted and deletes nothing; exit_code == 0",
+        "without --dry-run, matching captures/blobs/preprocess removed and index updated; exit_code == 0"
+      ],
+      "fail_if": ["--dry-run deletes data", "blobs orphaned (removed from index but left on disk, or vice versa)"]
+    },
+    {
+      "id": "REQ-CONFIG-001",
+      "category": "config",
+      "title": "config get/set/path round-trips through ~/.norm",
+      "command": "norm config set interval_minutes 10 ; norm config get interval_minutes ; norm config path",
+      "preconditions": ["~/.norm exists"],
+      "pass_if": [
+        "set writes interval_minutes=10 to ~/.norm as valid TOML",
+        "get prints 10",
+        "path prints the absolute path to ~/.norm",
+        "exit_code == 0 for each"
+      ],
+      "fail_if": ["set corrupts the TOML", "get reflects a stale value"]
+    },
+    {
+      "id": "REQ-CONFIG-002",
+      "category": "config",
+      "title": "config rejects unknown keys",
+      "command": "norm config set bogus_key 1",
+      "preconditions": [],
+      "pass_if": ["stderr names the unknown key", "~/.norm unchanged", "exit_code == 2"],
+      "fail_if": ["unknown key written to config", "exit_code == 0"]
+    },
+    {
+      "id": "REQ-CONFIG-003",
+      "category": "config",
+      "title": "Prompts are configurable and used at report time",
+      "command": "norm config set prompt_preprocess 'Summarize the active task in one line.'",
+      "preconditions": ["captures available", "model loadable"],
+      "pass_if": ["subsequent report preprocess passes the new prompt text to generate()", "exit_code == 0"],
+      "fail_if": ["the default prompt is used instead of the configured one"]
+    },
+    {
+      "id": "REQ-CONFIG-004",
+      "category": "config",
+      "title": "model config selects the MLX model_ref used by mlx-vlm",
+      "command": "norm config set model mlx-community/gemma-4-31b-it-4bit",
+      "preconditions": ["target weights loadable"],
+      "pass_if": ["subsequent reports load the configured model_ref via mlx-vlm load()", "exit_code == 0"],
+      "fail_if": ["the default model_ref is loaded instead of the configured one"]
+    },
+    {
+      "id": "REQ-SEC-001",
+      "category": "security",
+      "title": "All on-disk capture data is ciphertext",
+      "command": "inspect data_dir blob and index files directly (no norm involved)",
+      "preconditions": ["at least one capture stored"],
+      "pass_if": [
+        "image blobs do not parse as PNG/JPEG",
+        "AX blobs do not parse as JSON",
+        "the index file is not a readable plaintext SQLite database"
+      ],
+      "fail_if": ["any capture image, AX dump, or index row readable without the key"]
+    },
+    {
+      "id": "REQ-SEC-002",
+      "category": "security",
+      "title": "Login password is never read or held",
+      "command": "audit any norm command's behavior/memory",
+      "preconditions": [],
+      "pass_if": [
+        "norm never prompts for, reads, or stores the macOS login password",
+        "the data key is a norm-specific Keychain item and/or passphrase-derived value, distinct from the login password"
+      ],
+      "fail_if": ["the login password appears in norm's process memory, logs, or stored files"]
+    },
+    {
+      "id": "REQ-SEC-003",
+      "category": "security",
+      "title": "No elevated privileges required for any command",
+      "command": "run init, record, report, and all data commands as a normal user",
+      "preconditions": ["no sudo invocation"],
+      "pass_if": ["every command completes (or fails for its documented reason) without sudo/root", "no setuid helper or privileged daemon installed"],
+      "fail_if": ["any command requires sudo to function", "a root-owned helper is installed"]
+    },
+    {
+      "id": "REQ-SEC-004",
+      "category": "security",
+      "title": "Every read/write of data requires a successful unlock",
+      "command": "with key removed and no passphrase: norm record --once ; norm list ; norm report preprocess ; norm export",
+      "preconditions": ["store cannot be unlocked"],
+      "pass_if": ["each command refuses to read/write data and exits 3", "no plaintext produced and no new ciphertext written"],
+      "fail_if": ["any command reads or writes data while locked", "any exit_code other than 3 on lock failure"]
+    },
+    {
+      "id": "REQ-SEC-005",
+      "category": "security",
+      "title": "passwd rotates the passphrase via key re-wrapping",
+      "command": "norm passwd",
+      "preconditions": ["store unlockable with the old passphrase"],
+      "pass_if": [
+        "old passphrase verified before change",
+        "the data-key wrapping is re-derived with the new passphrase (key-wrapping, not bulk blob re-encryption unless explicitly requested)",
+        "after change, old passphrase fails (exit 3) and new passphrase unlocks (exit 0)"
+      ],
+      "fail_if": ["the data key is exposed in plaintext on disk during rotation", "old passphrase still unlocks after a successful change"]
+    },
+    {
+      "id": "REQ-SEC-006",
+      "category": "security",
+      "title": "Report-time decryption is transient and in-memory",
+      "command": "run report preprocess/interval while monitoring data_dir and temp paths",
+      "preconditions": ["encrypted captures exist", "model loadable"],
+      "pass_if": [
+        "decrypted images are passed to generate() as in-memory PIL objects",
+        "no plaintext image or AX dump is written to disk during inference",
+        "any transient buffers are released after the call"
+      ],
+      "fail_if": ["a plaintext image/AX file is written to disk (temp or otherwise) during reporting"]
+    },
+    {
+      "id": "REQ-ENV-001",
+      "category": "environment",
+      "title": "Missing macapptree / capture dependency is an environment error",
+      "command": "norm record --once",
+      "preconditions": ["macapptree or its native capture dependency unavailable"],
+      "pass_if": ["stderr names the missing dependency", "exit_code == 6"],
+      "fail_if": ["exit_code == 1 (generic) instead of 6", "a silent no-op capture is recorded"]
+    }
+  ]
+}
