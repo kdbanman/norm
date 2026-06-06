@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-GLOBAL-005</span> (precedence), every command;
@@ -115,9 +115,28 @@
   <p>Decision: confirm which keys are flag-overridable, name the flags canonically, and add
   precedence requirements — or explicitly mark them "config-only."</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span><strong>Every config key is flag-overridable</strong>, with
+    uniform precedence <code>CLI flag &gt; ~/.norm &gt; built-in default</code>. Canonical flags:</p>
+    <ul>
+      <li><code>interval_minutes</code> → <code>--interval</code>; <code>idle_threshold_seconds</code> →
+      <code>--idle-threshold</code>; <code>data_dir</code> → <code>--data-dir</code>;
+      <code>phash_threshold</code> → <code>--phash-threshold</code>; <code>model</code> →
+      <code>--model</code>; <code>window_k</code> → <code>--window</code>; <code>stride_j</code> →
+      <code>--stride</code>; <code>max_tokens</code> → <code>--max-tokens</code>;
+      <code>prompt_preprocess</code> → <code>--prompt-preprocess</code>; <code>prompt_interval</code> →
+      <code>--prompt-interval</code>.</li>
+      <li>Non-config command flags: <code>--once</code>, <code>--install/--status/--stop</code> (record);
+      <code>--force</code> (preprocess); <code>--auto-preprocess/--strict</code> (interval);
+      <code>--from/--to/--last/--before</code>; <code>--output</code>; <code>--include</code>;
+      <code>--export</code>; <code>--dry-run</code>; <code>--passphrase</code>; globals
+      <code>--config/--json/--verbose/--quiet/--help/--version</code>.</li>
+      <li>Precedence is testable for <em>every</em> overridable key, generalizing
+      <span class="req">REQ-GLOBAL-005</span>.</li>
+    </ul>
+    <p class="rationale">Rationale: the user wants a flag for every setting; uniform precedence is the
+    most flexible and the most testable.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="13-failure-exit-code-precedence.html">← 13 — Exit-code precedence</a></span>

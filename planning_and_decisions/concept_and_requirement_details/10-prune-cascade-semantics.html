@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-DATA-006</span>; concept §10.16; interacts with coverage
@@ -57,9 +57,27 @@
     allowed.</li>
   </ul>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span></p>
+    <ul>
+      <li><code>prune --before &lt;cutoff&gt;</code> selects <strong>captures by
+      <code>ts &lt; cutoff</code></strong> and deletes those rows + their image/AX blobs, atomically,
+      no orphans.</li>
+      <li><strong>Summaries and stored interval reports are retained</strong> — even when their
+      <code>capture_ids</code> now reference deleted captures (dangling refs allowed). They are the
+      durable lightweight record. Reverses this file's original suspicion — the user chose "keep
+      summaries as a lightweight record."</li>
+      <li>Opt-in <code>prune --include reports</code> <em>also</em> deletes preprocess summary rows
+      (<code>window_end &lt; cutoff</code>) and stored interval reports (<code>to &lt; cutoff</code>)
+      plus their markdown blobs.</li>
+      <li><code>--dry-run</code> reports the capture count (and, with <code>--include reports</code>, the
+      summary/report counts) and deletes nothing. <code>show</code> on a pruned capture → exit
+      <code>5</code>. <code>--force</code> re-gen of a window whose captures were pruned is
+      <strong>skipped</strong> as unreproducible (its existing summary is left intact).</li>
+    </ul>
+    <p class="rationale">Rationale: matches the user's "durable textual journal, prunable heavy media"
+    model, with an explicit opt-in to delete text for privacy.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="09-uninitialized-store-behavior.html">← 09 — Uninitialized store behavior</a></span>

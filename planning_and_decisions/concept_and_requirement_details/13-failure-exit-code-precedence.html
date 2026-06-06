@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-RECORD-007</span> (env, 6),
@@ -54,9 +54,22 @@
   have no permission to capture into, and you shouldn't load a model before you know the store
   opens. Confirm this ordering and codify it.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span><strong>First failure wins, in this order:</strong></p>
+    <ol>
+      <li>Usage / arg validation → <code>2</code> (incl. <code>--last</code> with
+      <code>--from/--to</code>, <code>interval</code> with no range, unknown flag/key).</li>
+      <li>Store not initialized → <code>5</code> (<code>NOT_INITIALIZED</code>).</li>
+      <li>Environment / permissions / missing deps → <code>6</code>.</li>
+      <li>Auth / store unlock → <code>3</code>.</li>
+      <li>Model load → <code>4</code>.</li>
+      <li>Data presence (no captures / too few / no coverage / unknown id) → <code>5</code>.</li>
+      <li>Unexpected runtime error → <code>1</code>.</li>
+    </ol>
+    <p class="rationale">Rationale: cheapest, most-fundamental preconditions first; "not initialized"
+    sits just after usage because nothing else can proceed without a store. Each stage carries a stable
+    string error code (<a href="15-output-string-contract.html">[15]</a>).</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="12-interval-report-storage.html">← 12 — Interval report storage</a></span>

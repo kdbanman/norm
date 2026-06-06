@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-INTERVAL-001</span>,
@@ -47,9 +47,18 @@
     the store model simpler; re-running interval is cheap if preprocess is cached.
   </div>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span><strong>Interval reports are always stored</strong> (neither
+    option (a) nor (b) — the user chose to persist every report). Drop "by default": every
+    <code>report interval</code> run persists an <strong>encrypted interval-report row</strong> + markdown
+    blob, and also emits to stdout (or <code>--output &lt;file&gt;</code> as plaintext). New data-model
+    entity <code>interval_report</code>: <code>id, generated_at, range_from, range_to, model, prompt_id,
+    source_preprocess_ids[], markdown_ref</code>. Re-running <strong>appends</strong> a new row (history
+    retained, keyed by <code>generated_at</code>). Deletable via <code>prune --include reports</code>
+    (<a href="10-prune-cascade-semantics.html">[10]</a>).</p>
+    <p class="rationale">Rationale: the stored history is the durable standup record; appending keeps a
+    timeline of how summaries evolved across runs/prompts.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="11-export-include-default.html">← 11 — Export --include default</a></span>

@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-RECORD-001</span>,
@@ -51,9 +51,18 @@
   (used by <span class="req">REQ-GLOBAL-005</span>) the stored <code>duration_s</code> is
   <strong>60</strong>, not 1.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span><strong><code>duration_s</code> is genuinely seconds.</strong>
+    On store, <code>duration_s = interval_minutes × 60</code>; on dedupe, the prior frame's
+    <code>duration_s += interval_minutes × 60</code> (using the interval in effect at that tick). So
+    §10.5's "300" is one 5-min interval already in seconds, and the extension makes it 600. With
+    <code>--once --interval 1</code> the stored value is <strong>60</strong>, not 1. Idle ticks add
+    nothing to <code>duration_s</code> — away-time lives in <code>idle_gap_s</code>
+    (<a href="07-idle-gap-accumulation.html">[07]</a>).</p>
+    <p class="rationale">Rationale: keeps the field's name honest and the value deterministic/testable.
+    <code>duration_s</code> = active time on a frame; <code>idle_gap_s</code> = away time; together they
+    reconstruct the timeline for the user's time-accounting use.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="05-time-argument-semantics.html">← 05 — Time argument semantics</a></span>

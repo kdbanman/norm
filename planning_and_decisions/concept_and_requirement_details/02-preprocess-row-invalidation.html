@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-PREPROCESS-003</span> (idempotent unless <code>--force</code>),
@@ -60,9 +60,24 @@
   <p>See <a href="01-preprocess-window-coverage.html">[01]</a> (coverage) and
   <a href="03-prompt-id-definition.html">[03]</a> (<code>prompt_id</code>).</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span><strong>Identity for idempotency = the window's capture set only.</strong></p>
+    <ul>
+      <li>A window counts as "done" when a preprocess row exists for that ordered capture set.
+      <code>model</code> and <code>prompt_id</code> are stored as <strong>provenance</strong>, not part
+      of the doneness check.</li>
+      <li>Changing the prompt or model does <strong>not</strong> auto-recompute. To pick up a new
+      prompt/model, run with <code>--force</code> (recompute + <strong>overwrite</strong> the row; one
+      summary per window). norm <em>may</em> warn when a row's stored <code>prompt_id</code>/<code>model</code>
+      differs from current config, suggesting <code>--force</code>.</li>
+      <li>Consequence for <span class="req">REQ-CONFIG-003/004</span>: verify the new prompt/model is
+      used when a window is <em>actually</em> computed — a fresh/uncovered window or a <code>--force</code>
+      re-run — not by a plain re-run over already-covered windows.</li>
+    </ul>
+    <p class="rationale">Rationale: the user chose "keep old summaries; regenerate only on
+    <code>--force</code>," reversing this file's original suspicion. Keeps re-runs cheap and avoids
+    silently re-spending the model when a prompt is tweaked.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="01-preprocess-window-coverage.html">← 01 — Window coverage</a></span>

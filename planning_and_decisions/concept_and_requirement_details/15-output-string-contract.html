@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       essentially every requirement with a <code>stderr</code>/<code>stdout</code> text
@@ -51,9 +51,25 @@
     </ol>
   </div>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span><strong>Layered contract</strong> (all four levels adopted,
+    the most robust option).</p>
+    <ol>
+      <li><strong>Exit codes are contractual</strong> — assert exactly.</li>
+      <li><strong><code>--json</code> output is contractual</strong> — assert structure, keys, values.
+      Failures under <code>--json</code> emit a structured envelope
+      <code>{"error":{"code":"STORE_LOCKED","exit":3,"message":"…"}}</code>.</li>
+      <li><strong>Stable string error codes</strong> back every failure mode
+      (<code>NOT_INITIALIZED</code>, <code>STORE_LOCKED</code>, <code>NO_CAPTURES</code>,
+      <code>NOT_ENOUGH_CAPTURES</code>, <code>COVERAGE_MISSING</code>, <code>MODEL_UNAVAILABLE</code>,
+      <code>INVALID_MODEL_REF</code>, <code>PERMISSION_MISSING</code>, <code>MACAPPTREE_MISSING</code>,
+      <code>UNKNOWN_ID</code>, <code>USAGE_ERROR</code>, …).</li>
+      <li><strong>Human prose is not exact-matched</strong> — assert stable keyword substrings (e.g.
+      contains "Screen Recording"/"Accessibility"; contains "force").</li>
+    </ol>
+    <p class="rationale">Rationale: the user is mostly-automated, so machine-readable codes/JSON are
+    first-class and tests assert codes, not prose.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="14-cli-surface-and-flag-config-mapping.html">← 14 — CLI surface &amp; flag map</a></span>

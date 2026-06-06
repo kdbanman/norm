@@ -63,6 +63,7 @@ strong { font-weight: 650; }
 .chip-spec   { background: #e6eef7; color: #2c5f8a; }
 .chip-verify { background: #efe9f6; color: #6b4f93; }
 .chip-todo   { background: var(--todo-bg); color: var(--todo-ink); border: 1px solid var(--todo-bd); }
+.chip-done   { background: #e1efe4; color: #2f6a3f; border: 1px solid #9cc6a8; }
 .affects { font-size: .88rem; color: var(--muted); }
 .affects .label { font-weight: 600; }
 .req {
@@ -91,6 +92,13 @@ strong { font-weight: 650; }
 }
 .resolution h2 { border: 0; margin: 0 0 .25rem; font-size: 1.02rem; }
 .resolution p { margin: 0; color: var(--todo-ink); }
+
+/* resolved variant — green, for files whose decision is recorded */
+.resolution.resolved { background: var(--suspect-bg); border-color: #9cc6a8; }
+.resolution.resolved p { color: #2f5d3a; }
+.resolution.resolved ul { color: #2f5d3a; }
+.resolution.resolved .rationale { color: var(--muted); font-size: .9rem; margin-top: .5rem; }
+.decided { font-weight: 700; color: #2f6a3f; text-transform: uppercase; letter-spacing: .04em; font-size: .7rem; margin-right: .4rem; }
 
 /* tables */
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .9rem; }

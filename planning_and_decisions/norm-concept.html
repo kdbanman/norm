@@ -243,10 +243,30 @@ pre.example {
       <dt>prompt_id</dt><dd>identifier derived from the effective prompt text</dd>
       <dt>markdown_ref</dt><dd>reference to encrypted markdown blob</dd>
     </dl>
-    <h3>interval report</h3>
-    <p>Produced on demand from preprocess records; written to file or stdout; not stored by
-    default. Blob refs point to encrypted files under <code>data_dir</code>; the index is an
-    encrypted SQLCipher database in the same directory.</p>
+    <h3>interval_report</h3>
+    <dl class="field-list">
+      <dt>id</dt><dd>row identifier</dd>
+      <dt>generated_at</dt><dd>when this report was produced</dd>
+      <dt>range_from</dt><dd>start of the reported interval</dd>
+      <dt>range_to</dt><dd>end of the reported interval</dd>
+      <dt>model</dt><dd>model_ref used for this report</dd>
+      <dt>prompt_id</dt><dd>identifier derived from the effective interval prompt</dd>
+      <dt>source_preprocess_ids[]</dt><dd>preprocess rows aggregated into this report</dd>
+      <dt>markdown_ref</dt><dd>reference to encrypted markdown blob</dd>
+    </dl>
+    <p>Every <code>report interval</code> run is <strong>persisted</strong> as an encrypted row (and
+    also emitted to stdout, or to <code>--output &lt;file&gt;</code> as plaintext). Re-running appends a
+    new row, keyed by <code>generated_at</code>, so the report history is retained. Blob refs point to
+    encrypted files under <code>data_dir</code>; the index is an encrypted SQLCipher database in the
+    same directory.</p>
+    <p style="font-size:.85rem;color:var(--muted)"><strong>Identity &amp; provenance.</strong> A
+    preprocess row's identity for idempotency is its ordered <code>capture_ids</code> set;
+    <code>model</code> and <code>prompt_id</code> are provenance and do not by themselves trigger a
+    recompute (use <code>--force</code>). <code>prompt_id = sha256(effective prompt text)</code> (short
+    prefix); the literal prompt text is persisted alongside for export/debug. See
+    <a href="concept_and_requirement_details/02-preprocess-row-invalidation.html">[02]</a>,
+    <a href="concept_and_requirement_details/03-prompt-id-definition.html">[03]</a>,
+    <a href="concept_and_requirement_details/12-interval-report-storage.html">[12]</a>.</p>
   </section>
 
   <section id="s7">
@@ -287,6 +307,25 @@ pre.example {
       <li><strong>Net rule:</strong> store a capture iff the user is present <em>and</em> the
       screen changed.</li>
     </ul>
+
+    <h3>Resolved details</h3>
+    <ul>
+      <li><strong>phash:</strong> 64-bit dHash of the <em>active screen's</em> screenshot at a fixed
+      downscale; <code>phash_threshold</code> (default 4) is Hamming distance.</li>
+      <li><strong>ax_hash:</strong> hash of a <em>normalized projection</em> of the AX tree — keep
+      structure, roles, labels, and coarse geometry buckets; strip focus, selection/caret, cursor,
+      scroll offset, live clocks, and ephemeral IDs. This strip-list defines "screen unchanged."</li>
+      <li><strong>idle_gap_s:</strong> wall-clock idle — the total seconds skipped due to idle since
+      the previous stored capture, stamped on the next stored capture and then reset.</li>
+      <li><strong>duration_s:</strong> seconds. A stored frame starts at
+      <code>interval_minutes × 60</code>; each deduped tick adds another
+      <code>interval_minutes × 60</code>. Idle ticks add to <code>idle_gap_s</code>, not
+      <code>duration_s</code>.</li>
+    </ul>
+    <p style="font-size:.85rem;color:var(--muted)">Details:
+    <a href="concept_and_requirement_details/06-capture-duration-rule.html">[06]</a>,
+    <a href="concept_and_requirement_details/07-idle-gap-accumulation.html">[07]</a>,
+    <a href="concept_and_requirement_details/08-dedupe-hash-inputs.html">[08]</a>.</p>
   </section>
 
   <section id="s9">
@@ -295,13 +334,33 @@ pre.example {
       <li><strong><code>report preprocess</code>:</strong> slide a window of <em>K</em>
       captures with stride <em>J</em> over the ordered capture history; per window, call
       <code>generate(prompt_preprocess, images + AX text)</code> in-process and store one
-      markdown summary per window. Idempotent unless <code>--force</code>.</li>
+      markdown summary per window. A window's identity is its ordered capture set; a window is "done"
+      when a row for that set exists, so re-runs skip it. <code>--force</code> recomputes and overwrites
+      covered windows (and is how a prompt/model change takes effect).</li>
       <li><strong><code>report interval</code>:</strong> gather per-window markdown summaries
-      within <code>[from, to]</code>; call
-      <code>generate(prompt_interval, markdowns)</code> and emit aggregated markdown. Errors
-      (exit 5) if no preprocess output covers the interval, unless
-      <code>--auto-preprocess</code>.</li>
+      within <code>[from, to]</code>; call <code>generate(prompt_interval, markdowns)</code>, emit
+      aggregated markdown, and <strong>persist</strong> it as an <code>interval_report</code> row. When
+      the range isn't fully covered: interactive runs explain the gap and prompt (default: summarize the
+      missing windows first, then report; alternative: exit); non-interactive runs take the default
+      automatically. <code>--auto-preprocess</code> forces "summarize first" without asking;
+      <code>--strict</code> exits <code>5</code> (<code>COVERAGE_MISSING</code>) without doing work.</li>
     </ul>
+
+    <h3>Windows, coverage &amp; edge cases</h3>
+    <ul>
+      <li><strong>Window count:</strong> <code>floor((N − K) / J) + 1</code> for <code>N ≥ K</code>;
+      the trailing remainder is dropped and summarized later once enough captures accumulate.</li>
+      <li><strong>Too few captures:</strong> <code>N = 0</code> → exit <code>5</code>
+      (<code>NO_CAPTURES</code>); <code>0 &lt; N &lt; K</code> → exit <code>5</code>
+      (<code>NOT_ENOUGH_CAPTURES</code>).</li>
+      <li><strong>Interval coverage</strong> = capture-set coverage: every capture in
+      <code>[from, to]</code> that belongs to a computable window is in some done window;
+      dropped-tail captures don't count as "uncovered."</li>
+    </ul>
+    <p style="font-size:.85rem;color:var(--muted)">Details:
+    <a href="concept_and_requirement_details/01-preprocess-window-coverage.html">[01]</a>,
+    <a href="concept_and_requirement_details/04-window-stride-edge-cases.html">[04]</a>,
+    <a href="concept_and_requirement_details/12-interval-report-storage.html">[12]</a>.</p>
   </section>
 
   <section id="s10">
@@ -310,7 +369,9 @@ pre.example {
     <code>IDX</code> SQLCipher index rows, <code>KC</code> Keychain, <code>LD</code> launchd,
     <code>PROC</code> process, <code>HF</code> Hugging Face weight cache,
     <code>OUT</code> stdout/stderr, <code>EXIT</code> exit code.
-    <code>data_dir</code> default = <code>~/Library/Application Support/norm</code>.</p>
+    <code>data_dir</code> default = <code>~/Library/Application Support/norm</code>.
+    Where a command would prompt (e.g. interval coverage), non-interactive invocations (piped, cron,
+    or <code>--json</code>) take the default action automatically rather than asking.</p>
 
     <div class="worked-examples">
 
@@ -413,12 +474,20 @@ after   IDX: unchanged (no duplicates)     OUT: "0 new windows"     EXIT: 0
       </div>
 
       <div class="worked-example" id="ex-10">
-        <h3>§10.10 report interval, no preprocess coverage</h3>
-        <pre class="example">$ norm report interval --last 24h
-before  IDX: captures exist in range; preprocess rows do NOT cover range
-action  none
-after   OUT(stderr): "no preprocess output for range; run report preprocess or pass
-        --auto-preprocess"     EXIT: 5</pre>
+        <h3>§10.10 report interval, range not fully covered</h3>
+        <pre class="example">$ norm report interval --last 24h          # non-interactive (piped/cron)
+before  IDX: captures in range; preprocess rows do NOT cover range
+action  no TTY -> take default: preprocess the uncovered windows, then aggregate
+after   IDX: + new preprocess rows; + 1 interval_report row
+        OUT(stdout): aggregated markdown     EXIT: 0
+
+$ norm report interval --last 24h --strict
+action  none (opted out of auto work)
+after   OUT(stderr): "range not fully summarized; run report preprocess or drop --strict"
+        code=COVERAGE_MISSING     EXIT: 5
+
+$ norm report interval --last 24h          # interactive (TTY)
+action  prompt: "range not fully summarized - summarize now? [Y/n]" (default Y -> as above)</pre>
       </div>
 
       <div class="worked-example" id="ex-11">
@@ -426,16 +495,18 @@ after   OUT(stderr): "no preprocess output for range; run report preprocess or p
         <pre class="example">$ norm report interval --from -24h --to now
 before  IDX: preprocess rows P1..Pk within [from,to]
 action  unlock; decrypt P1..Pk markdown; load(); generate(prompt_interval, markdowns)
-after   IDX: unchanged (interval reports not stored by default)
-        OUT(stdout): aggregated markdown     EXIT: 0</pre>
+after   IDX: + 1 interval_report row {generated_at, range_from/to, model, prompt_id,
+              source_preprocess_ids[], markdown_ref}
+        OUT(stdout): aggregated markdown     EXIT: 0
+note    every interval run is stored; re-running appends a new row</pre>
       </div>
 
       <div class="worked-example" id="ex-12">
         <h3>§10.12 report interval --auto-preprocess</h3>
         <pre class="example">$ norm report interval --last 24h --auto-preprocess
 before  IDX: captures in range; missing preprocess coverage
-action  run preprocess for uncovered windows (§10.8), then aggregate (§10.11)
-after   IDX: + new preprocess rows
+action  summarize uncovered windows (§10.8) without prompting, then aggregate (§10.11)
+after   IDX: + new preprocess rows; + 1 interval_report row
         OUT(stdout): aggregated markdown     EXIT: 0</pre>
       </div>
 
@@ -469,13 +540,18 @@ after   FS: + ./dump/{images,ax,reports}/...  (plaintext export)     EXIT: 0</pr
       <div class="worked-example" id="ex-16">
         <h3>§10.16 prune</h3>
         <pre class="example">$ norm prune --before -30d --dry-run
-before  IDX: rows older than 30d exist
+before  IDX: captures (and summaries/reports) older than 30d exist
 action  compute matches; report; delete nothing
-after   FS/IDX: unchanged     OUT: count + ids that would be removed     EXIT: 0
+after   FS/IDX: unchanged     OUT: capture count that would be removed     EXIT: 0
 
 $ norm prune --before -30d
-action  delete matching index rows AND their blobs atomically
-after   IDX: matching rows removed; FS: matching blobs removed (no orphans)   EXIT: 0</pre>
+action  delete captures with ts<cutoff AND their image/AX blobs atomically; KEEP summaries/reports
+after   IDX: captures removed (preprocess/interval rows retained, may reference gone captures)
+        FS: capture blobs removed (no orphans)     EXIT: 0
+
+$ norm prune --before -30d --include reports
+action  also delete preprocess rows (window_end<cutoff) + interval_report rows (to<cutoff) + blobs
+after   IDX: captures + matching summaries/reports removed     EXIT: 0</pre>
       </div>
 
       <div class="worked-example" id="ex-17">
@@ -537,6 +613,16 @@ after   FS/IDX: unchanged; no plaintext produced
         <tr><td><code>6</code></td><td>environment error (missing Accessibility/Screen Recording permission, macapptree unavailable)</td></tr>
       </tbody>
     </table>
+    <p style="font-size:.9rem"><strong>Precedence (first failure wins):</strong> usage (2) →
+    not-initialized (5, <code>NOT_INITIALIZED</code>) → environment/permissions (6) → auth/unlock (3) →
+    model load (4) → data presence/coverage (5) → runtime (1). An uninitialized store is exit 5
+    (distinct from a locked store, exit 3); <code>status</code> never fails (always exit 0, reporting
+    <code>initialized</code>/<code>locked</code>/counts). Every failure also carries a stable string
+    code, surfaced under <code>--json</code> as <code>{"error":{"code","exit","message"}}</code> (e.g.
+    <code>STORE_LOCKED</code>, <code>COVERAGE_MISSING</code>, <code>NOT_ENOUGH_CAPTURES</code>). See
+    <a href="concept_and_requirement_details/09-uninitialized-store-behavior.html">[09]</a>,
+    <a href="concept_and_requirement_details/13-failure-exit-code-precedence.html">[13]</a>,
+    <a href="concept_and_requirement_details/15-output-string-contract.html">[15]</a>.</p>
   </section>
 
   <section id="s12">

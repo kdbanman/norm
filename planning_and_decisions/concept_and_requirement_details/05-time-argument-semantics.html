@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-spec">Spec clarification</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-INTERVAL-001/002</span>,
@@ -71,9 +71,24 @@
   <p>Range parsing underlies nearly every data/report command. Tests need exact rules for
   defaults, precedence, and which forms are accepted on which flag.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span></p>
+    <ul>
+      <li><code>--last</code> is <strong>mutually exclusive</strong> with
+      <code>--from</code>/<code>--to</code>; combining them → exit <code>2</code>.</li>
+      <li><code>--to</code> defaults to <code>now</code> when only <code>--from</code> is given. For
+      <code>list</code> and <code>report preprocess</code>, omitting all range flags = <strong>all
+      captures</strong>. <code>report interval</code> still <strong>requires</strong> a range (none →
+      exit <code>2</code>).</li>
+      <li><strong>Relative offsets allowed on both</strong> <code>--from</code> and <code>--to</code>
+      (e.g. <code>--to -1h</code> is valid). All relative/<code>now</code> values resolve against a
+      single command-start timestamp. (Revises the conventions doc's stated asymmetry.)</li>
+      <li>Calendar words resolve in the <strong>local timezone</strong>; <code>yesterday</code> =
+      <code>[00:00, 24:00)</code> of the prior local day. <code>prune --before</code> accepts the same
+      forms.</li>
+    </ul>
+    <p class="rationale">Rationale: predictable, symmetric range parsing across every data/report command.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="04-window-stride-edge-cases.html">← 04 — Window/stride edge cases</a></span>
