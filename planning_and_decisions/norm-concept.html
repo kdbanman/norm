@@ -356,6 +356,11 @@ pre.example {
       <li><strong>Interval coverage</strong> = capture-set coverage: every capture in
       <code>[from, to]</code> that belongs to a computable window is in some done window;
       dropped-tail captures don't count as "uncovered."</li>
+      <li><strong>Stale config:</strong> norm may warn when a window's stored
+      <code>prompt_id</code>/<code>model</code> differs from current config (suggesting
+      <code>--force</code>); it never auto-recomputes a done window.</li>
+      <li><strong>Unreproducible windows:</strong> <code>--force</code> skips windows whose source
+      captures were pruned (frames can't be reloaded); the existing summary is left intact.</li>
     </ul>
     <p style="font-size:.85rem;color:var(--muted)">Details:
     <a href="concept_and_requirement_details/01-preprocess-window-coverage.html">[01]</a>,

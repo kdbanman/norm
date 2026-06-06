@@ -136,12 +136,26 @@ const DATA = {
       "elevated_privileges_used": false
     },
     "time_args": {
-      "from": "--from accepts ISO-8601 or relative (e.g. '-24h', 'yesterday'); resolved in local tz",
+      "from": "--from accepts ISO-8601 or relative (e.g. '-24h', 'yesterday'); resolved in local tz; calendar words like 'yesterday' = [00:00,24:00) of the prior local day",
       "to": "--to accepts ISO-8601, relative (e.g. '-1h'), or 'now'; defaults to 'now' when only --from is given",
       "last": "--last accepts a duration like '24h', '7d'; mutually exclusive with --from/--to (else exit 2)",
+      "before": "prune --before accepts the same forms as --from (ISO-8601 / relative); selects rows with ts < cutoff",
       "defaults": "list & report preprocess: omitting all range flags = all captures. report interval requires a range (else exit 2). All relative/now values resolve against one command-start timestamp."
     },
     "global_flags": ["--help/-h","--version","--config <path>","--json","--verbose/-v","--quiet/-q"],
+    "command_flags": [
+      "init: --passphrase, --force",
+      "record: --once, --interval, --idle-threshold, --phash-threshold, --install, --status, --stop",
+      "report preprocess: --window, --stride, --from, --to, --last, --force, --model, --max-tokens, --prompt-preprocess",
+      "report interval: --from, --to, --last, --auto-preprocess, --strict, --output, --model, --max-tokens, --prompt-interval",
+      "list: --from, --to, --last, --json",
+      "show: <id>, --export <dir>",
+      "export: --from, --to, --last, --out, --include images,ax,reports",
+      "prune: --before, --dry-run, --include reports",
+      "config: get <key> / set <key> <value> / path",
+      "status: (no args; --json)",
+      "passwd: (interactive prompts; or NORM_PASSPHRASE)"
+    ],
     "uninitialized": "Store commands on a never-initialized machine exit 5 (NOT_INITIALIZED), distinct from a present-but-locked store (exit 3, STORE_LOCKED). config get/set require ~/.norm. status always exits 0, reporting initialized/locked/counts.",
     "interactivity": "Where a command would prompt (e.g. interval coverage), non-interactive invocations (piped, cron, or --json) take the interactive default action automatically rather than blocking.",
     "exit_precedence": [
@@ -195,7 +209,7 @@ const DATA = {
     {"id":"REQ-INIT-001","category":"init","title":"init creates config, data dir, and encryption key","command":"norm init","preconditions":["~/.norm does not exist","data_dir does not exist"],"pass_if":["~/.norm created as valid TOML containing all default keys","data_dir created","an encrypted SQLCipher index exists in data_dir","a norm data key exists in the Keychain","exit_code == 0"],"fail_if":["exit_code != 0","the data key is derived from or equal to the login password","any plaintext capture/index file is written"]},
     {"id":"REQ-INIT-002","category":"init","title":"init refuses to clobber an existing store without --force","command":"norm init","preconditions":["data_dir already initialized"],"pass_if":["no existing data overwritten","stderr explains store exists and suggests --force","exit_code == 2"],"fail_if":["existing data destroyed","exit_code == 0"]},
     {"id":"REQ-INIT-003","category":"init","title":"init with passphrase wraps the data key","command":"norm init --passphrase","preconditions":["no existing store"],"pass_if":["passphrase prompted on stdin (not echoed) or read from NORM_PASSPHRASE","stored key material wrapped via Argon2id with the passphrase","exit_code == 0"],"fail_if":["passphrase echoed to terminal","passphrase stored in plaintext"]},
-    {"id":"REQ-RECORD-001","category":"record","title":"record --once stores one frame when present and changed","command":"norm record --once","preconditions":["store initialized and unlockable","Accessibility and Screen Recording permissions granted","HIDIdleTime < idle_threshold","screen content differs from the last stored capture"],"pass_if":["exactly one new capture row written","row contains ts, active_app, phash, ax_hash, encrypted image_ref, encrypted ax_ref","image/AX blobs on disk are ciphertext (do not parse as PNG/JSON)","exit_code == 0"],"fail_if":["more than one row written","any blob written in plaintext","exit_code != 0"]},
+    {"id":"REQ-RECORD-001","category":"record","title":"record --once stores one frame when present and changed","command":"norm record --once","preconditions":["store initialized and unlockable","Accessibility and Screen Recording permissions granted","HIDIdleTime < idle_threshold","screen content differs from the last stored capture"],"pass_if":["exactly one new capture row written","row contains ts, active_app, phash, ax_hash, encrypted image_ref, encrypted ax_ref","duration_s == interval_minutes*60 seconds (e.g. 60 with --interval 1)","image/AX blobs on disk are ciphertext (do not parse as PNG/JSON)","exit_code == 0"],"fail_if":["more than one row written","any blob written in plaintext","exit_code != 0"]},
     {"id":"REQ-RECORD-002","category":"record","title":"record skips capture while idle and stamps the wall-clock gap","command":"norm record --once --idle-threshold 1","preconditions":["HIDIdleTime >= 1 (idle)"],"pass_if":["no capture blob stored for the idle tick","next stored capture's idle_gap_s reflects the wall-clock idle accumulated since the previous stored capture (>= observed idle)","exit_code == 0"],"fail_if":["a capture is stored during idle","idle_gap_s not recorded"]},
     {"id":"REQ-RECORD-003","category":"record","title":"record dedupes an unchanged frame (phash + normalized-AX equality)","command":"norm record --once","preconditions":["user active","phash within threshold AND normalized ax_hash equal to last stored capture"],"pass_if":["no new capture row","prior capture duration_s extended by interval_minutes*60 seconds","exit_code == 0"],"fail_if":["duplicate blob stored","prior duration_s unchanged"]},
     {"id":"REQ-RECORD-004","category":"record","title":"record stores a new frame when only one of phash/AX changes","command":"norm record --once","preconditions":["phash within threshold but ax_hash differs (or vice versa)"],"pass_if":["a new capture row IS stored (dedupe requires BOTH)","exit_code == 0"],"fail_if":["frame incorrectly dropped as duplicate"]},
@@ -401,6 +415,14 @@ function renderConventions() {
     });
     fm.appendChild(fmTbl);
     sec.appendChild(fm);
+  }
+
+  // command flags inventory
+  if (C.command_flags) {
+    const cf = el('div','conv-card');
+    cf.innerHTML = '<h3>Command flags <span style="font-weight:400;color:var(--muted)">(non-config; per command)</span></h3>';
+    cf.appendChild(listEl(C.command_flags));
+    sec.appendChild(cf);
   }
 }
 
