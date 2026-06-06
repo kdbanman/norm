@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>norm — Concept Document</title>
+<link rel="stylesheet" href="concept_and_requirement_details/style.css">
+<style>
+:root { --maxw: 58rem; }
+
+.topbar { display: flex; justify-content: space-between; align-items: baseline; max-width: var(--maxw); margin-inline: auto; font-size: .85rem; color: var(--muted); margin-bottom: 1.4rem; }
+.topbar a { color: var(--muted); }
+
+.toc { background: #f3f1ec; border-radius: 8px; padding: .7rem 1.1rem .7rem 1rem; margin-bottom: 2rem; }
+.toc strong { font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.toc ol { margin: .35rem 0 0; padding-left: 1.4rem; column-count: 2; column-gap: 1.5rem; }
+.toc li { margin: .22rem 0; font-size: .9rem; }
+.toc ol ol { column-count: 1; padding-left: 1.1rem; }
+@media (max-width: 560px) { .toc ol { column-count: 1; } }
+
+section { margin-top: 2.2rem; }
+section h2 { scroll-margin-top: 1rem; }
+
+pre.diagram {
+  background: #f1efeb; border-radius: 6px; padding: .8rem 1.1rem;
+  font-size: .74rem; line-height: 1.55; overflow-x: auto;
+  border: 1px solid var(--rule);
+}
+.diagram-note { font-size: .78rem; color: var(--muted); margin-bottom: .35rem; }
+
+.worked-examples { margin-top: .5rem; }
+.worked-example { margin: 1.5rem 0; }
+.worked-example h3 { font-size: 1rem; margin-bottom: .4rem; scroll-margin-top: 1rem; }
+pre.example {
+  background: #f5f4f1; border: 1px solid var(--rule); border-radius: 6px;
+  padding: .7rem 1rem; font-size: .77rem; line-height: 1.6; overflow-x: auto;
+  margin: 0;
+}
+
+.field-list { display: grid; grid-template-columns: auto 1fr; gap: .2rem .8rem; margin: .6rem 0; font-size: .92rem; }
+.field-list dt { font-family: ui-monospace,Menlo,monospace; font-size: .82rem; white-space: nowrap; color: #444; padding: .1rem 0; }
+.field-list dd { margin: 0; padding: .1rem 0; color: #555; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span>norm · planning &amp; decisions</span>
+  <span><a href="norm-requirements.html">Requirements →</a> · <a href="concept_and_requirement_details/README.html">Detail docs</a></span>
+</div>
+
+<header style="max-width:var(--maxw);margin-inline:auto">
+  <h1>norm — Concept Document</h1>
+</header>
+
+<nav class="toc" style="max-width:var(--maxw);margin-inline:auto">
+  <strong>Sections</strong>
+  <ol>
+    <li><a href="#s1">Purpose</a></li>
+    <li><a href="#s2">Rationale</a></li>
+    <li><a href="#s3">Use cases</a></li>
+    <li><a href="#s4">Architecture</a></li>
+    <li><a href="#s5">Inference layer</a></li>
+    <li><a href="#s6">Data model</a></li>
+    <li><a href="#s7">Security model</a></li>
+    <li><a href="#s8">Capture gating</a></li>
+    <li><a href="#s9">Reporting pipeline</a></li>
+    <li><a href="#s10">Worked examples</a>
+      <ol>
+        <li><a href="#ex-1">init</a></li>
+        <li><a href="#ex-2">init over existing store</a></li>
+        <li><a href="#ex-3">record --once, changed</a></li>
+        <li><a href="#ex-4">record --once, idle</a></li>
+        <li><a href="#ex-5">record --once, dedupe</a></li>
+        <li><a href="#ex-6">record (loop)</a></li>
+        <li><a href="#ex-7">record daemon lifecycle</a></li>
+        <li><a href="#ex-8">report preprocess</a></li>
+        <li><a href="#ex-9">report preprocess (re-run)</a></li>
+        <li><a href="#ex-10">interval, no coverage</a></li>
+        <li><a href="#ex-11">interval, normal</a></li>
+        <li><a href="#ex-12">interval --auto-preprocess</a></li>
+        <li><a href="#ex-13">list</a></li>
+        <li><a href="#ex-14">show --export</a></li>
+        <li><a href="#ex-15">export (range)</a></li>
+        <li><a href="#ex-16">prune</a></li>
+        <li><a href="#ex-17">config set / get</a></li>
+        <li><a href="#ex-18">passwd</a></li>
+        <li><a href="#ex-19">status</a></li>
+        <li><a href="#ex-20">data op while locked</a></li>
+      </ol>
+    </li>
+    <li><a href="#s11">Exit codes</a></li>
+    <li><a href="#s12">Non-goals</a></li>
+  </ol>
+</nav>
+
+<main style="max-width:var(--maxw);margin-inline:auto">
+
+  <section id="s1">
+    <h2>1. Purpose</h2>
+    <p><code>norm</code> is a macOS CLI that periodically captures a screenshot plus the active
+    screen's accessibility (AX) tree, stores both encrypted on disk, and runs a local
+    multimodal model (Gemma 4, MLX, in-process) over the capture history to emit markdown
+    activity summaries. Two report phases: per sliding window (<code>report preprocess</code>)
+    and per time interval (<code>report interval</code>).</p>
+  </section>
+
+  <section id="s2">
+    <h2>2. Rationale</h2>
+    <ul>
+      <li><strong>AX tree + pixels:</strong> AX provides structured, cheap, searchable text;
+      pixels are required for apps that render to a canvas (terminals, design tools, video).
+      Both are captured; both are sent to the model.</li>
+      <li><strong>Idle gate + content dedupe:</strong> frames are not stored when the user is
+      absent or the screen is unchanged. Bounds store growth and inference cost.</li>
+      <li><strong>In-process inference:</strong> no network, no daemon, no localhost server.
+      The model runs inside the norm process via <code>mlx-vlm</code>.</li>
+      <li><strong>Application-level encryption:</strong> data access is gated on a norm-specific
+      key, independent of the login password and of FileVault.</li>
+    </ul>
+  </section>
+
+  <section id="s3">
+    <h2>3. Use cases</h2>
+    <ul>
+      <li>Activity summary over a time range (input to standups/reviews).</li>
+      <li>Reconstruction of past on-screen context.</li>
+      <li>Passive time accounting without manual entry.</li>
+      <li>Workflow/SOP extraction from captured sessions.</li>
+    </ul>
+  </section>
+
+  <section id="s4">
+    <h2>4. Architecture</h2>
+
+    <p class="diagram-note">Architecture diagram — Mermaid source (paste into
+    <a href="https://mermaid.live" target="_blank">mermaid.live</a> to visualize):</p>
+    <pre class="diagram">flowchart TD
+    CFG["~/.norm (TOML)\ndefaults + prompts"] --&gt; CLI
+
+    subgraph CLI["norm — CLI frontend"]
+        REC["record"]
+        PRE["report preprocess"]
+        INT["report interval"]
+        UTIL["init / status / list / show /\nexport / prune / config / passwd"]
+    end
+
+    subgraph CAP["Capture engine (record loop)"]
+        IDLE["Idle gate\nHIDIdleTime (IOKit)"]
+        SHOT["macapptree\nscreenshot + AX JSON"]
+        DEDUP["Dedupe\nphash + AX-tree equality"]
+    end
+
+    subgraph STORE["Encrypted store"]
+        DB["SQLCipher index"]
+        BLOB["AES-256-GCM blobs\n(images, AX, markdown)"]
+        KEY["Data key in Keychain\n(optional passphrase wrap)"]
+    end
+
+    MLX["mlx-vlm (in-process)\nGemma 4 MLX weights\ntext + image -&gt; markdown"]
+
+    REC --&gt; IDLE --&gt; SHOT --&gt; DEDUP --&gt; STORE
+    PRE --&gt; STORE
+    PRE --&gt; MLX --&gt; STORE
+    INT --&gt; STORE
+    INT --&gt; MLX --&gt; INT
+    UTIL --&gt; STORE
+    KEY -. unlocks .- STORE</pre>
+
+    <h3>Components</h3>
+    <ul>
+      <li><strong>CLI frontend (<code>norm</code>):</strong> argument parsing, config
+      resolution (CLI flag &gt; <code>~/.norm</code> &gt; built-in default), dispatch, unified
+      exit codes.</li>
+      <li><strong>Capture engine (<code>record</code>):</strong> timed loop — idle gate,
+      macapptree capture, dedupe, encrypted write.</li>
+      <li><strong>Encrypted store:</strong> SQLCipher index + AES-256-GCM blob files; data key
+      in Keychain, optionally passphrase-wrapped.</li>
+      <li><strong>Inference (<code>mlx-vlm</code>, in-process):</strong> loads Gemma 4 MLX
+      weights; <code>generate()</code> with image + text.</li>
+      <li><strong>Report engine:</strong> <code>report preprocess</code> (sliding window),
+      <code>report interval</code> (aggregation).</li>
+      <li><strong>Config: <code>~/.norm</code> (TOML):</strong> default parameters and the two
+      prompts.</li>
+    </ul>
+
+    <h3>Dependencies</h3>
+    <p>norm is a Python CLI; both the capture and inference layers are Python libraries.</p>
+    <ul>
+      <li><strong>macapptree</strong> — captures a screenshot of the visible apps and emits
+      their accessibility tree as JSON with element bounding boxes; the source of each frame's
+      image + AX data.</li>
+      <li><strong>mlx-vlm</strong> — in-process MLX inference for vision-language models on
+      Apple Silicon (loads the Gemma 4 weights).</li>
+      <li><strong>imagehash (dHash)</strong> — perceptual hashing for content dedupe.</li>
+      <li><strong>SQLCipher (AES-256) + AES-256-GCM + Argon2id</strong> — encrypted index,
+      blob encryption, passphrase key-wrapping.</li>
+      <li><strong>IOKit <code>HIDIdleTime</code></strong> — user-idle detection.</li>
+    </ul>
+  </section>
+
+  <section id="s5">
+    <h2>5. Inference layer</h2>
+    <ul>
+      <li><strong>Library:</strong> <code>mlx-vlm</code>, run in-process on Apple Silicon
+      (MLX). No server, no daemon, no socket; norm does not start or connect to any inference
+      endpoint.</li>
+      <li><strong>Model:</strong> an MLX repo id or local path. Default
+      <code>mlx-community/gemma-4-e4b-it-4bit</code>. First load downloads weights to the
+      Hugging Face cache (<code>~/.cache/huggingface</code>); later loads are local.</li>
+      <li><strong>Call pattern:</strong>
+        <code>model, processor = load(model_ref)</code> →
+        <code>prompt = apply_chat_template(processor, model.config, text, num_images=n)</code> →
+        <code>generate(model, processor, prompt, image=[...])</code>
+      </li>
+      <li><strong>Decrypted frames</strong> are passed to <code>generate()</code> as in-memory
+      PIL images; AX text as a string. No plaintext image or AX dump is written to disk at
+      report time.</li>
+      <li><strong>Modalities used:</strong> text + image. (Gemma 4 also supports audio; not
+      used.)</li>
+    </ul>
+  </section>
+
+  <section id="s6">
+    <h2>6. Data model</h2>
+    <h3>capture</h3>
+    <dl class="field-list">
+      <dt>id</dt><dd>row identifier</dd>
+      <dt>ts</dt><dd>capture timestamp</dd>
+      <dt>active_app</dt><dd>frontmost application at capture time</dd>
+      <dt>idle_gap_s</dt><dd>seconds of idle since the previous stored capture</dd>
+      <dt>phash</dt><dd>perceptual hash of the screenshot</dd>
+      <dt>ax_hash</dt><dd>hash of the normalized AX tree</dd>
+      <dt>image_ref</dt><dd>reference to encrypted image blob</dd>
+      <dt>ax_ref</dt><dd>reference to encrypted AX blob</dd>
+      <dt>duration_s</dt><dd>time accounted to this frame; extended when later frames dedupe to it</dd>
+    </dl>
+    <h3>preprocess</h3>
+    <dl class="field-list">
+      <dt>id</dt><dd>row identifier</dd>
+      <dt>window_start</dt><dd>first capture in the window</dd>
+      <dt>window_end</dt><dd>last capture in the window</dd>
+      <dt>capture_ids[]</dt><dd>ordered list of capture ids in the window</dd>
+      <dt>model</dt><dd>model_ref used for this summary</dd>
+      <dt>prompt_id</dt><dd>identifier derived from the effective prompt text</dd>
+      <dt>markdown_ref</dt><dd>reference to encrypted markdown blob</dd>
+    </dl>
+    <h3>interval report</h3>
+    <p>Produced on demand from preprocess records; written to file or stdout; not stored by
+    default. Blob refs point to encrypted files under <code>data_dir</code>; the index is an
+    encrypted SQLCipher database in the same directory.</p>
+  </section>
+
+  <section id="s7">
+    <h2>7. Security model</h2>
+    <ul>
+      <li><strong>FileVault</strong> is volume-level full-disk encryption unlocked at login. It
+      has no per-directory or per-process scope and is not norm's access gate. It remains
+      compatible as an at-rest defense.</li>
+      <li><strong>At rest:</strong> SQLCipher (AES-256) index; AES-256-GCM blobs.</li>
+      <li><strong>Key custody:</strong> random 256-bit data key as a dedicated Keychain item
+      (ACL scoped to the norm binary), optionally wrapped by a norm passphrase via Argon2id.
+      The login password is never read or stored.</li>
+      <li><strong>No elevation:</strong> runs as the user; no sudo, no setuid, no privileged
+      helper.</li>
+      <li><strong>Unlock required:</strong> any read or write of data requires a successful
+      unlock. The key is resident in process memory only for the duration of a command and is
+      zeroed on exit. No long-lived mounted volume exists.</li>
+      <li><strong>Transient decryption:</strong> report-time blobs are decrypted to in-memory
+      PIL images/strings, passed to <code>mlx-vlm</code>, and discarded; no plaintext is
+      written to disk.</li>
+      <li><strong>Permissions:</strong> capture requires macOS Accessibility and Screen
+      Recording permissions; missing permissions fail fast (exit 6).</li>
+      <li><strong>Non-sandboxed:</strong> reading other applications' AX trees is not permitted
+      from inside the macOS App Sandbox.</li>
+    </ul>
+  </section>
+
+  <section id="s8">
+    <h2>8. Capture gating (idle + dedupe)</h2>
+    <ul>
+      <li><strong>Idle gate:</strong> read <code>HIDIdleTime</code> (seconds since last HID
+      input) via IOKit. If <code>idle &gt;= idle_threshold</code>, skip the capture; record the
+      elapsed idle as <code>idle_gap_s</code> on the next stored capture.</li>
+      <li><strong>Content dedupe:</strong> if the new frame's perceptual hash is within
+      <code>phash_threshold</code> (Hamming distance) of the last stored frame <em>and</em>
+      <code>ax_hash</code> is identical, do not store; extend the prior record's
+      <code>duration_s</code>.</li>
+      <li><strong>Net rule:</strong> store a capture iff the user is present <em>and</em> the
+      screen changed.</li>
+    </ul>
+  </section>
+
+  <section id="s9">
+    <h2>9. Reporting pipeline</h2>
+    <ul>
+      <li><strong><code>report preprocess</code>:</strong> slide a window of <em>K</em>
+      captures with stride <em>J</em> over the ordered capture history; per window, call
+      <code>generate(prompt_preprocess, images + AX text)</code> in-process and store one
+      markdown summary per window. Idempotent unless <code>--force</code>.</li>
+      <li><strong><code>report interval</code>:</strong> gather per-window markdown summaries
+      within <code>[from, to]</code>; call
+      <code>generate(prompt_interval, markdowns)</code> and emit aggregated markdown. Errors
+      (exit 5) if no preprocess output covers the interval, unless
+      <code>--auto-preprocess</code>.</li>
+    </ul>
+  </section>
+
+  <section id="s10">
+    <h2>10. Worked examples</h2>
+    <p style="font-size:.88rem;color:var(--muted)">State tags: <code>FS</code> filesystem,
+    <code>IDX</code> SQLCipher index rows, <code>KC</code> Keychain, <code>LD</code> launchd,
+    <code>PROC</code> process, <code>HF</code> Hugging Face weight cache,
+    <code>OUT</code> stdout/stderr, <code>EXIT</code> exit code.
+    <code>data_dir</code> default = <code>~/Library/Application Support/norm</code>.</p>
+
+    <div class="worked-examples">
+
+      <div class="worked-example" id="ex-1">
+        <h3>§10.1 init</h3>
+        <pre class="example">$ norm init
+before  FS: no ~/.norm; no data_dir          KC: no norm key
+action  write config; create store; mint key
+after   FS: ~/.norm (TOML, all default keys); data_dir/index.db (SQLCipher header);
+            data_dir/blobs/ (empty)
+        KC: item "norm:datakey" (random 256-bit, ACL=norm binary)
+        OUT(stdout): config path + data_dir path     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-2">
+        <h3>§10.2 init over an existing store</h3>
+        <pre class="example">$ norm init
+before  FS: data_dir/index.db exists
+action  none (refuses to clobber)
+after   FS: unchanged
+        OUT(stderr): "store already initialized; use --force"   EXIT: 2</pre>
+      </div>
+
+      <div class="worked-example" id="ex-3">
+        <h3>§10.3 record --once, user present and screen changed</h3>
+        <pre class="example">$ norm record --once
+before  IDX: last capture C(n) at T0, phash=H0, ax_hash=A0
+        state: HIDIdleTime &lt; idle_threshold; current frame phash=H1 (|H1-H0|&gt;thresh) or A1!=A0
+action  unlock store; capture via macapptree; hash; not a dup -&gt; store
+after   IDX: + capture C(n+1) {ts=now, active_app, idle_gap_s=0, phash=H1, ax_hash=A1,
+              image_ref, ax_ref, duration_s=interval}
+        FS: + 2 encrypted blobs in data_dir/blobs/ (image, AX)
+        OUT: capture id     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-4">
+        <h3>§10.4 record --once, user idle</h3>
+        <pre class="example">$ norm record --once --idle-threshold 60
+before  state: HIDIdleTime = 180s (&gt;= 60)
+action  unlock store; read idle; skip capture; buffer idle gap
+after   IDX: no new capture row; pending idle_gap = 180 (applied to next stored capture)
+        FS: no new blobs
+        OUT: "idle 180s; skipped"     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-5">
+        <h3>§10.5 record --once, screen unchanged (dedupe)</h3>
+        <pre class="example">$ norm record --once
+before  IDX: last capture C(n), phash=H0, ax_hash=A0, duration_s=300
+        state: current frame phash=H0' (|H0'-H0|&lt;=thresh) AND ax_hash=A0
+action  capture; hash; dup (both match) -&gt; do not store; extend prior
+after   IDX: C(n).duration_s = 300 + interval; no new row
+        FS: no new blobs
+        OUT: "duplicate; extended C(n)"     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-6">
+        <h3>§10.6 record (persistent loop)</h3>
+        <pre class="example">$ norm record --interval 5
+before  PROC: none
+action  foreground loop; every ~5 min run the gate+capture path (§10.3/10.4/10.5)
+after   PROC: norm runs until SIGINT/SIGTERM
+        on signal: flush writes, lock store, zero key in memory   EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-7">
+        <h3>§10.7 record daemon lifecycle</h3>
+        <pre class="example">$ norm record --install
+before  LD: no agent
+action  write ~/Library/LaunchAgents/&lt;label&gt;.plist; bootstrap; start
+after   LD: agent loaded and running (no sudo)     OUT: label     EXIT: 0
+
+$ norm record --status
+after   OUT: running=true pid=&lt;n&gt;     EXIT: 0
+
+$ norm record --stop
+after   LD: agent stopped; subsequent --status -&gt; running=false     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-8">
+        <h3>§10.8 report preprocess</h3>
+        <pre class="example">$ norm report preprocess --window 6 --stride 3
+before  IDX: N=12 captures; 0 preprocess rows; HF: weights cached
+action  unlock; windows = floor((12-6)/3)+1 = 3; per window decrypt frames to in-memory
+        PIL + AX text; load() once; generate(prompt_preprocess, image+AX); store markdown
+after   IDX: + 3 preprocess rows {window_start/end, capture_ids[6], model, prompt_id,
+              markdown_ref}
+        FS: + 3 encrypted markdown blobs
+        OUT: "3 windows summarized"     EXIT: 0
+note    no socket opened; inference in-process via mlx-vlm</pre>
+      </div>
+
+      <div class="worked-example" id="ex-9">
+        <h3>§10.9 report preprocess (re-run, idempotent)</h3>
+        <pre class="example">$ norm report preprocess --window 6 --stride 3
+before  IDX: same 12 captures; 3 preprocess rows already cover them
+action  detect covered windows; skip
+after   IDX: unchanged (no duplicates)     OUT: "0 new windows"     EXIT: 0
+        (with --force: recompute and overwrite the 3 rows)</pre>
+      </div>
+
+      <div class="worked-example" id="ex-10">
+        <h3>§10.10 report interval, no preprocess coverage</h3>
+        <pre class="example">$ norm report interval --last 24h
+before  IDX: captures exist in range; preprocess rows do NOT cover range
+action  none
+after   OUT(stderr): "no preprocess output for range; run report preprocess or pass
+        --auto-preprocess"     EXIT: 5</pre>
+      </div>
+
+      <div class="worked-example" id="ex-11">
+        <h3>§10.11 report interval, normal</h3>
+        <pre class="example">$ norm report interval --from -24h --to now
+before  IDX: preprocess rows P1..Pk within [from,to]
+action  unlock; decrypt P1..Pk markdown; load(); generate(prompt_interval, markdowns)
+after   IDX: unchanged (interval reports not stored by default)
+        OUT(stdout): aggregated markdown     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-12">
+        <h3>§10.12 report interval --auto-preprocess</h3>
+        <pre class="example">$ norm report interval --last 24h --auto-preprocess
+before  IDX: captures in range; missing preprocess coverage
+action  run preprocess for uncovered windows (§10.8), then aggregate (§10.11)
+after   IDX: + new preprocess rows
+        OUT(stdout): aggregated markdown     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-13">
+        <h3>§10.13 list</h3>
+        <pre class="example">$ norm list --from -6h --to now --json
+before  IDX: M captures in range
+action  unlock; read index metadata only (no blob decrypt)
+after   FS: unchanged
+        OUT(stdout): JSON array [{id, ts, active_app, idle_gap_s, duration_s}, ...]   EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-14">
+        <h3>§10.14 show --export</h3>
+        <pre class="example">$ norm show 1042 --export ./out
+before  IDX: capture 1042 exists
+action  unlock; decrypt image+AX of 1042; write decrypted copies under ./out
+after   FS: + ./out/1042.png, ./out/1042.ax.json (plaintext, user-requested export)
+        OUT(stdout): metadata of 1042     EXIT: 0
+        (unknown id -&gt; stderr "not found", EXIT: 5)</pre>
+      </div>
+
+      <div class="worked-example" id="ex-15">
+        <h3>§10.15 export (range)</h3>
+        <pre class="example">$ norm export --from -1d --to now --out ./dump --include images,ax,reports
+before  IDX: data in range
+action  unlock; decrypt and write requested artifact types
+after   FS: + ./dump/{images,ax,reports}/...  (plaintext export)     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-16">
+        <h3>§10.16 prune</h3>
+        <pre class="example">$ norm prune --before -30d --dry-run
+before  IDX: rows older than 30d exist
+action  compute matches; report; delete nothing
+after   FS/IDX: unchanged     OUT: count + ids that would be removed     EXIT: 0
+
+$ norm prune --before -30d
+action  delete matching index rows AND their blobs atomically
+after   IDX: matching rows removed; FS: matching blobs removed (no orphans)   EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-17">
+        <h3>§10.17 config set / get</h3>
+        <pre class="example">$ norm config set interval_minutes 10
+before  ~/.norm: interval_minutes = 5
+after   ~/.norm: interval_minutes = 10 (valid TOML)     EXIT: 0
+
+$ norm config get interval_minutes
+after   OUT(stdout): 10     EXIT: 0
+
+$ norm config set bogus 1
+after   ~/.norm unchanged; OUT(stderr): "unknown key 'bogus'"     EXIT: 2</pre>
+      </div>
+
+      <div class="worked-example" id="ex-18">
+        <h3>§10.18 passwd</h3>
+        <pre class="example">$ norm passwd
+before  KC: data key wrapped by old passphrase
+action  prompt old (verify) + new (twice, not echoed); re-wrap key with new passphrase
+after   KC: key wrapped by new passphrase; old passphrase no longer unlocks
+        OUT: "passphrase updated"     EXIT: 0
+note    data blobs are NOT bulk re-encrypted; only the key wrapping changes</pre>
+      </div>
+
+      <div class="worked-example" id="ex-19">
+        <h3>§10.19 status</h3>
+        <pre class="example">$ norm status
+before  any
+action  open index (unlock); read counters; query launchd
+after   FS: unchanged
+        OUT(stdout): data_dir, locked/unlocked, captures=N, last_ts, preprocess=k,
+        daemon=running/stopped     EXIT: 0</pre>
+      </div>
+
+      <div class="worked-example" id="ex-20">
+        <h3>§10.20 any data op while locked</h3>
+        <pre class="example">$ norm list           # KC key absent, no passphrase
+before  store not unlockable
+action  none (refuse)
+after   FS/IDX: unchanged; no plaintext produced
+        OUT(stderr): "store locked"     EXIT: 3</pre>
+      </div>
+
+    </div><!-- /worked-examples -->
+  </section>
+
+  <section id="s11">
+    <h2>11. Exit codes</h2>
+    <table>
+      <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>0</code></td><td>success</td></tr>
+        <tr><td><code>1</code></td><td>runtime error</td></tr>
+        <tr><td><code>2</code></td><td>usage error (unknown command/subcommand, missing/invalid arg)</td></tr>
+        <tr><td><code>3</code></td><td>auth error (store locked, wrong passphrase, missing/denied key)</td></tr>
+        <tr><td><code>4</code></td><td>model error (MLX weights unavailable offline, invalid model_ref, inference failure)</td></tr>
+        <tr><td><code>5</code></td><td>not found (no captures / no preprocess coverage / unknown id)</td></tr>
+        <tr><td><code>6</code></td><td>environment error (missing Accessibility/Screen Recording permission, macapptree unavailable)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="s12">
+    <h2>12. Non-goals</h2>
+    <ul>
+      <li>Audio capture/transcription.</li>
+      <li>Cross-platform support (macOS only).</li>
+      <li>GUI timeline/browser.</li>
+      <li>Semantic/vector search over captures.</li>
+    </ul>
+  </section>
+
+</main>
+</body>
+</html>

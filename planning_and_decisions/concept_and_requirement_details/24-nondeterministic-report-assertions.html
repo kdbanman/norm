@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>24 — Nondeterministic report assertions — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="verify">
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>24 — Asserting on reports despite LLM nondeterminism</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-verify">Verification approach</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-PREPROCESS-001</span>,
+      <span class="req">REQ-INTERVAL-001</span>, anything that checks report output</div>
+  </div>
+</header>
+<main>
+  <h2>The gap</h2>
+  <p>Reports are markdown emitted by a multimodal model. The <strong>content is
+  nondeterministic</strong>, so no test may assert on the <em>text</em> of a report. Yet
+  several requirements are "about" reporting. We need a standing principle for what is fair
+  to assert.</p>
+
+  <h2>Principle</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected</span>
+    Assert only on <strong>structure, side effects, and inputs to <code>generate()</code></strong>
+    — never on generated prose.
+  </div>
+
+  <h3>Structural / side-effect assertions (always safe)</h3>
+  <ul>
+    <li>A markdown blob was written to disk.</li>
+    <li>The blob is <strong>encrypted</strong> (see <a href="18-encryption-at-rest-verification.html">[18]</a>).</li>
+    <li>Correct <strong>row count</strong> equals the expected window count (see <a href="04-window-stride-edge-cases.html">[04]</a>).</li>
+    <li>Correct row fields: <code>window_start</code>, <code>window_end</code>,
+    <code>capture_ids</code>, <code>model</code>, <code>prompt_id</code>.</li>
+    <li>Exit code; stdout-vs-<code>--output</code> routing (<span class="req">INTERVAL-005</span>).</li>
+  </ul>
+
+  <h3>Input-side assertions (via seam from <a href="16-inference-test-seam.html">[16]</a>)</h3>
+  <ul>
+    <li><code>generate()</code> received both modalities (images + AX text).</li>
+    <li>The configured prompt was passed.</li>
+    <li>The configured <code>model_ref</code> was loaded.</li>
+  </ul>
+
+  <h3>Determinism aid: the fake model</h3>
+  <p>The <strong>fake model from <a href="16-inference-test-seam.html">[16]</a></strong>
+  returns a fixed canned markdown, making even shape-level checks exact and stable — e.g.
+  "output equals the canned string," "interval received preprocess summaries N..M." Real-weights
+  runs are reserved for occasional smoke tests that assert only "non-empty markdown, exit 0."</p>
+
+  <p>Document this as a <strong>standing convention</strong> so no one writes a brittle content
+  assertion.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="23-environment-failure-simulation.html">← 23 — Environment failure simulation</a></span>
+    <span class="next"><span class="label">Next</span><a href="25-unattended-secret-input.html">25 — Unattended secret input →</a></span>
+  </nav>
+</main>
+</body>
+</html>

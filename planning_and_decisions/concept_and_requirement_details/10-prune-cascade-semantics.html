@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>10 — Prune cascade semantics — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>10 — What does <code>prune</code> cascade to (preprocess rows, partial windows)?</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-spec">Spec clarification</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-DATA-006</span>; concept §10.16; interacts with coverage
+      <a href="01-preprocess-window-coverage.html">[01]</a></div>
+  </div>
+</header>
+<main>
+  <h2>What's unclear</h2>
+  <p><code>prune --before -30d</code> "deletes matching index rows AND their blobs atomically
+  (no orphans)." But the data model has <strong>captures</strong> <em>and</em>
+  <strong>preprocess rows</strong> (which reference <code>capture_ids[]</code>). Three things
+  are undefined:</p>
+  <ul>
+    <li>Does pruning a capture also delete preprocess rows that <strong>reference</strong> it?</li>
+    <li>What about a preprocess <strong>window that straddles the cutoff</strong> — some
+    captures older than 30d, some newer? Delete the row, keep it, or keep it but mark its
+    captures gone?</li>
+    <li>Does "matching" select rows by capture <code>ts</code>, by preprocess
+    <code>window_end</code>, or both?</li>
+  </ul>
+
+  <h2>Why it matters</h2>
+  <p>If a preprocess row survives but its underlying captures are gone, <code>export</code>,
+  <code>show</code>, and re-<code>--force</code> can't reproduce it, and "coverage" in
+  <a href="01-preprocess-window-coverage.html">[01]</a> becomes inconsistent. Tests need to
+  know exactly what remains after a prune.</p>
+
+  <h2>Options / suspected answer</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected</span>
+    Prune selects <strong>captures by <code>ts &lt; cutoff</code></strong>, deletes them and
+    their blobs, <strong>and</strong> deletes any preprocess row referencing
+    <strong>at least one</strong> pruned capture (a window is only meaningful if all its
+    captures exist). All atomically, no orphan blobs. <code>--dry-run</code> should report both
+    the capture count and the cascaded preprocess row count.
+  </div>
+  <ul>
+    <li>Alternative: prune preprocess rows only when <strong>fully</strong> older than the
+    cutoff (<code>window_end &lt; cutoff</code>), leaving straddling windows intact with
+    dangling <code>capture_ids</code>. Rejected unless dangling references are explicitly
+    allowed.</li>
+  </ul>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="09-uninitialized-store-behavior.html">← 09 — Uninitialized store behavior</a></span>
+    <span class="next"><span class="label">Next</span><a href="11-export-include-default.html">11 — Export --include default →</a></span>
+  </nav>
+</main>
+</body>
+</html>

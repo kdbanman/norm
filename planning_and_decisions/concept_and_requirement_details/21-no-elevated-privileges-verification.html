@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>21 — No elevated privileges verification — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="verify">
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>21 — Verifying "no elevated privileges / no privileged helper"</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-verify">Verification approach</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-SEC-003</span>,
+      <span class="req">REQ-RECORD-009</span> (<code>--install</code> requires no sudo)</div>
+  </div>
+</header>
+<main>
+  <h2>The gap</h2>
+  <p>"Every command works as a normal user; no setuid helper or privileged daemon installed"
+  is a <strong>system-state property</strong> verified by auditing process and filesystem
+  state, not by norm's output.</p>
+
+  <h2>Options (executable, non-CLI)</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected core</span>
+    <strong>Run-as-user, no-sudo harness</strong> — execute the full command suite as an
+    unprivileged user with <strong>no <code>sudo</code> available on PATH</strong>. Assert
+    each command either succeeds or fails for its <em>documented</em> reason — never a
+    privilege error.
+  </div>
+
+  <h3>Post-run filesystem audits</h3>
+  <ul>
+    <li><code>find</code> the norm install and any files it created; assert none have
+    <strong>setuid/setgid bits</strong> set.</li>
+    <li>Assert <code>record --install</code> creates a <strong>LaunchAgent</strong>
+    (<code>~/Library/LaunchAgents/…</code>, user domain) and <em>not</em> a LaunchDaemon
+    (<code>/Library/LaunchDaemons</code>, root). Verify with
+    <code>launchctl print gui/&lt;uid&gt;/&lt;label&gt;</code> vs. the system domain.</li>
+    <li>Assert no root-owned files appear under <code>data_dir</code> or the install
+    location.</li>
+  </ul>
+
+  <h3><code>--install</code> without sudo</h3>
+  <p>The launchd registration should succeed in the user GUI domain without elevated
+  privileges. Confirm via <code>--status</code> showing <code>running=true</code> with a pid
+  owned by the current user.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="20-negative-security-properties.html">← 20 — Negative security properties</a></span>
+    <span class="next"><span class="label">Next</span><a href="22-capture-gating-test-harness.html">22 — Capture gating test harness →</a></span>
+  </nav>
+</main>
+</body>
+</html>

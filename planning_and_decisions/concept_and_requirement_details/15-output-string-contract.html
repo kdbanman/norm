@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>15 — Output string contract — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>15 — Are output strings contractual, and how strict are assertions?</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-spec">Spec clarification</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      essentially every requirement with a <code>stderr</code>/<code>stdout</code> text
+      expectation</div>
+  </div>
+</header>
+<main>
+  <h2>What's unclear</h2>
+  <p>Both docs quote specific human-readable messages — <em>"idle 180s; skipped"</em>, <em>"0
+  new windows"</em>, <em>"store already initialized; use --force"</em>, <em>"duplicate;
+  extended C(n)"</em> — but never say whether these are <strong>contractual exact strings</strong>
+  or just <strong>illustrative examples</strong>. Requirements paraphrase them loosely
+  ("stderr explains…", "stderr names the missing permission").</p>
+
+  <h2>Why it matters</h2>
+  <p>This decides how brittle the test suite is. Asserting exact prose means every wording
+  tweak breaks tests; asserting nothing about messages means we can't verify "names the missing
+  permission." We need a policy.</p>
+
+  <h2>Suggested layered policy</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Lean</span>
+    <ol>
+      <li><strong>Exit codes are always contractual</strong> — assert exactly.</li>
+      <li><strong><code>--json</code> output is contractual</strong> — assert structure, keys,
+      and values.</li>
+      <li><strong>Human prose is not exact-matched.</strong> Assert stable
+      substrings/keywords that carry the requirement's intent — e.g. message contains
+      <code>"force"</code> for init-clobber; names <code>"Screen Recording"</code> /
+      <code>"Accessibility"</code> for permission errors.</li>
+      <li><strong>Consider stable message codes</strong> or a <code>--json</code> error
+      envelope (<code>{"code": "STORE_LOCKED", "exit": 3, ...}</code>) so negative tests can
+      assert a code instead of prose. This is the most robust option and worth adding to
+      the spec.</li>
+    </ol>
+  </div>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="14-cli-surface-and-flag-config-mapping.html">← 14 — CLI surface &amp; flag map</a></span>
+    <span class="next"><span class="label">Next</span><a href="16-inference-test-seam.html">16 — Inference test seam →</a></span>
+  </nav>
+</main>
+</body>
+</html>

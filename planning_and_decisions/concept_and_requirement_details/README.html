@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concept &amp; Requirement Details — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="topnav">norm · planning &amp; decisions · <strong>concept &amp; requirement details</strong></div>
+
+<header>
+  <h1>Concept &amp; Requirement Details</h1>
+  <p class="lede">The detailed layer beneath
+    <a href="../norm-concept.html">norm-concept</a> and
+    <a href="../norm-requirements.html">norm-requirements</a>: one file per question
+    those two documents leave open or under-specified.</p>
+</header>
+
+<main>
+  <p>Each file states an <strong>open question</strong> plus suspected answers/options, and ends
+  with a <code>Resolution</code> heading marked <strong>TODO</strong>. As questions are decided,
+  the answer goes under <code>Resolution</code> and the file becomes the durable record of
+  <em>why</em> the behavior is what it is — it stays semantically correct after resolution
+  (it's "the details," not "the uncertainties").</p>
+
+  <div class="kinds">
+    <div class="kind">
+      <h3><span class="chip chip-spec">Spec clarification</span></h3>
+      <p>What the behavior <em>should be</em>. Resolving these sharpens the requirements and
+      unblocks concrete CLI assertions (session goal #1).</p>
+    </div>
+    <div class="kind">
+      <h3><span class="chip chip-verify">Verification approach</span></h3>
+      <p>How to prove a requirement that <em>can't</em> be a plain black-box CLI assertion —
+      in-process inference, encryption at rest, negative security properties (session goal #2).</p>
+    </div>
+  </div>
+
+  <h2>Spec clarifications</h2>
+  <table>
+    <thead><tr><th>#</th><th>Document</th><th>Question</th><th>Key reqs</th></tr></thead>
+    <tbody>
+      <tr><td class="idx-num">01</td><td><a href="01-preprocess-window-coverage.html">preprocess-window-coverage</a></td><td>What does "coverage" mean (idempotency + interval gating)?</td><td><span class="req">PREPROCESS-003</span> <span class="req">INTERVAL-003/004</span></td></tr>
+      <tr><td class="idx-num">02</td><td><a href="02-preprocess-row-invalidation.html">preprocess-row-invalidation</a></td><td>What is a preprocess row's identity; what triggers recompute?</td><td><span class="req">PREPROCESS-003</span> <span class="req">CONFIG-003/004</span></td></tr>
+      <tr><td class="idx-num">03</td><td><a href="03-prompt-id-definition.html">prompt-id-definition</a></td><td>What exactly is <code>prompt_id</code>?</td><td><span class="req">§6</span> <span class="req">CONFIG-003</span></td></tr>
+      <tr><td class="idx-num">04</td><td><a href="04-window-stride-edge-cases.html">window-stride-edge-cases</a></td><td>N&lt;K and trailing-remainder windows?</td><td><span class="req">PREPROCESS-001/006</span></td></tr>
+      <tr><td class="idx-num">05</td><td><a href="05-time-argument-semantics.html">time-argument-semantics</a></td><td><code>--from</code>/<code>--to</code>/<code>--last</code> interaction &amp; defaults?</td><td><span class="req">INTERVAL-001/002</span> <span class="req">PREPROCESS-004</span></td></tr>
+      <tr><td class="idx-num">06</td><td><a href="06-capture-duration-rule.html">capture-duration-rule</a></td><td><code>duration_s</code> units &amp; extension rule?</td><td><span class="req">RECORD-001/003</span></td></tr>
+      <tr><td class="idx-num">07</td><td><a href="07-idle-gap-accumulation.html">idle-gap-accumulation</a></td><td>How does <code>idle_gap_s</code> accumulate across skips?</td><td><span class="req">RECORD-002</span></td></tr>
+      <tr><td class="idx-num">08</td><td><a href="08-dedupe-hash-inputs.html">dedupe-hash-inputs</a></td><td>What feeds <code>phash</code>/<code>ax_hash</code>; AX normalization?</td><td><span class="req">RECORD-003/004</span></td></tr>
+      <tr><td class="idx-num">09</td><td><a href="09-uninitialized-store-behavior.html">uninitialized-store-behavior</a></td><td>Behavior before <code>init</code> (absent ≠ locked)?</td><td><span class="req">all data/report</span></td></tr>
+      <tr><td class="idx-num">10</td><td><a href="10-prune-cascade-semantics.html">prune-cascade-semantics</a></td><td>Does prune cascade to preprocess rows?</td><td><span class="req">DATA-006</span></td></tr>
+      <tr><td class="idx-num">11</td><td><a href="11-export-include-default.html">export-include-default</a></td><td><code>export --include</code> default &amp; layout?</td><td><span class="req">DATA-005</span></td></tr>
+      <tr><td class="idx-num">12</td><td><a href="12-interval-report-storage.html">interval-report-storage</a></td><td>Are interval reports ever stored?</td><td><span class="req">INTERVAL-001/005</span></td></tr>
+      <tr><td class="idx-num">13</td><td><a href="13-failure-exit-code-precedence.html">failure-exit-code-precedence</a></td><td>Which exit code wins when several fail?</td><td><span class="req">RECORD-007/008</span> <span class="req">SEC-004</span> <span class="req">PREPROCESS-005/006</span></td></tr>
+      <tr><td class="idx-num">14</td><td><a href="14-cli-surface-and-flag-config-mapping.html">cli-surface-and-flag-config-mapping</a></td><td>Complete flag list &amp; flag↔config map?</td><td><span class="req">GLOBAL-005</span> <span class="req">all</span></td></tr>
+      <tr><td class="idx-num">15</td><td><a href="15-output-string-contract.html">output-string-contract</a></td><td>Are messages contractual; assertion strictness?</td><td><span class="req">every text expectation</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Verification approaches</h2>
+  <table>
+    <thead><tr><th>#</th><th>Document</th><th>Property to verify</th><th>Key reqs</th></tr></thead>
+    <tbody>
+      <tr><td class="idx-num">16</td><td><a href="16-inference-test-seam.html">inference-test-seam</a></td><td>Observe the in-process <code>generate()</code> call</td><td><span class="req">ARCH-001</span> <span class="req">PREPROCESS-002</span> <span class="req">CONFIG-003/004</span></td></tr>
+      <tr><td class="idx-num">17</td><td><a href="17-no-inference-server-verification.html">no-inference-server-verification</a></td><td>No inference socket (vs. allowed weight download)</td><td><span class="req">ARCH-001</span> <span class="req">PREPROCESS-002</span></td></tr>
+      <tr><td class="idx-num">18</td><td><a href="18-encryption-at-rest-verification.html">encryption-at-rest-verification</a></td><td>On-disk data is ciphertext</td><td><span class="req">SEC-001</span> <span class="req">RECORD-001</span> <span class="req">PREPROCESS-001</span></td></tr>
+      <tr><td class="idx-num">19</td><td><a href="19-keychain-key-and-acl-verification.html">keychain-key-and-acl-verification</a></td><td>Keychain key exists &amp; is scoped</td><td><span class="req">INIT-001</span> <span class="req">SEC-002</span></td></tr>
+      <tr><td class="idx-num">20</td><td><a href="20-negative-security-properties.html">negative-security-properties</a></td><td>Login pw never read; transient decrypt; key zeroed</td><td><span class="req">SEC-002/006</span> <span class="req">RECORD-006</span></td></tr>
+      <tr><td class="idx-num">21</td><td><a href="21-no-elevated-privileges-verification.html">no-elevated-privileges-verification</a></td><td>No sudo / no privileged helper</td><td><span class="req">SEC-003</span> <span class="req">RECORD-009</span></td></tr>
+      <tr><td class="idx-num">22</td><td><a href="22-capture-gating-test-harness.html">capture-gating-test-harness</a></td><td>Deterministic idle + dedupe testing</td><td><span class="req">RECORD-001/002/003/004</span></td></tr>
+      <tr><td class="idx-num">23</td><td><a href="23-environment-failure-simulation.html">environment-failure-simulation</a></td><td>Induce permission/dep/offline faults</td><td><span class="req">RECORD-007</span> <span class="req">ENV-001</span> <span class="req">PREPROCESS-005</span></td></tr>
+      <tr><td class="idx-num">24</td><td><a href="24-nondeterministic-report-assertions.html">nondeterministic-report-assertions</a></td><td>What to assert despite LLM nondeterminism</td><td><span class="req">PREPROCESS-001</span> <span class="req">INTERVAL-001</span></td></tr>
+      <tr><td class="idx-num">25</td><td><a href="25-unattended-secret-input.html">unattended-secret-input</a></td><td>Non-interactive passphrase (passwd, daemon)</td><td><span class="req">INIT-003</span> <span class="req">SEC-005</span> <span class="req">RECORD-009</span></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Resolving</h2>
+  <p>Fill the <code>Resolution</code> section of a file with the decision (and a one-line
+  rationale).</p>
+  <div class="cluster">
+    <strong>Linked clusters:</strong>
+    <a href="01-preprocess-window-coverage.html">01</a> →
+    <a href="02-preprocess-row-invalidation.html">02</a> →
+    <a href="03-prompt-id-definition.html">03</a> →
+    <a href="04-window-stride-edge-cases.html">04</a>
+    form the preprocess/coverage cluster, and
+    <a href="16-inference-test-seam.html">16</a> unblocks most of the goal-#2 verification items.
+  </div>
+</main>
+
+</body>
+</html>

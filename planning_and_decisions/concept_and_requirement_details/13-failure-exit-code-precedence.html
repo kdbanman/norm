@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>13 — Failure exit-code precedence — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>13 — Exit-code precedence when multiple preconditions fail</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-spec">Spec clarification</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-007</span> (env, 6),
+      <span class="req">REQ-RECORD-008</span> (auth, 3),
+      <span class="req">REQ-SEC-004</span> (auth, 3),
+      <span class="req">REQ-PREPROCESS-005</span> (model, 4),
+      <span class="req">REQ-PREPROCESS-006</span> (not_found, 5); concept §11</div>
+  </div>
+</header>
+<main>
+  <h2>What's unclear</h2>
+  <p>Several failure modes can be true <strong>simultaneously</strong>, but the order of checks
+  — and thus which exit code wins — is undefined.</p>
+  <p>Example: <code>record --once</code> with <em>both</em> Screen Recording permission missing
+  (→ 6) <em>and</em> the store unlockable (→ 3).
+  <span class="req">REQ-RECORD-007</span> says 6; <span class="req">REQ-SEC-004</span> says 3.
+  Which runs first?</p>
+  <p>Similarly for <code>report preprocess</code> when the store is locked (3) <em>and</em>
+  the model can't load (4) <em>and</em> there are no captures (5).</p>
+
+  <h2>Why it matters</h2>
+  <p>Tests isolate one failure at a time, but real invocations won't. A defined ordering makes
+  exit codes deterministic and lets us write negative tests without ambiguity.</p>
+
+  <h2>Suspected check order (first failure wins)</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected</span>
+    <ol>
+      <li><strong>Usage / arg validation → 2</strong> — before doing any work.</li>
+      <li><strong>Environment / permissions / missing deps → 6</strong></li>
+      <li><strong>Auth / store unlock → 3</strong></li>
+      <li><strong>Model load → 4</strong></li>
+      <li><strong>Data presence (no captures / no coverage / unknown id) → 5</strong></li>
+      <li><strong>Unexpected runtime error → 1</strong></li>
+    </ol>
+  </div>
+  <p>Rationale: cheapest and most-fundamental preconditions first. You can't unlock a store you
+  have no permission to capture into, and you shouldn't load a model before you know the store
+  opens. Confirm this ordering and codify it.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="12-interval-report-storage.html">← 12 — Interval report storage</a></span>
+    <span class="next"><span class="label">Next</span><a href="14-cli-surface-and-flag-config-mapping.html">14 — CLI surface &amp; flag↔config map →</a></span>
+  </nav>
+</main>
+</body>
+</html>

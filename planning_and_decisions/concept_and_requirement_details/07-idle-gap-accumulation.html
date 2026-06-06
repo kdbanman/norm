@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 — idle_gap_s accumulation — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>07 — How is <code>idle_gap_s</code> accumulated across skipped ticks?</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-spec">Spec clarification</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-002</span>; concept §8, §10.4</div>
+  </div>
+</header>
+<main>
+  <h2>What's unclear</h2>
+  <p>When the user is idle, a tick is skipped and the elapsed idle is "buffered" to stamp onto
+  <strong>the next stored capture</strong> as <code>idle_gap_s</code>. But if
+  <strong>several consecutive idle ticks</strong> pass before the next stored capture, it's
+  undefined whether <code>idle_gap_s</code> is:</p>
+  <ul>
+    <li>the <strong>last</strong> observed <code>HIDIdleTime</code>,</li>
+    <li>the <strong>sum</strong> of idle values across the skipped ticks, or</li>
+    <li>the <strong>wall-clock gap</strong> between the last stored capture and the next stored one.</li>
+  </ul>
+
+  <h2>Why it matters</h2>
+  <p><span class="req">REQ-RECORD-002</span> only asserts <code>idle_gap_s &gt;= observed
+  idle</code>, which all three options satisfy for a single tick. The persistent-loop behavior
+  (<span class="req">REQ-RECORD-005</span>) needs a defined rule, and any exact assertion
+  depends on it.</p>
+
+  <h2>Options / suspected answer</h2>
+  <ul>
+    <li><strong>(a) Last observed idle</strong> — simplest; loses information across multiple
+    skips.</li>
+    <li><strong>(b) Sum of skipped idle</strong> — matches the "buffer idle gap" wording; can
+    overcount if ticks overlap the same continuous idle stretch.</li>
+  </ul>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected most meaningful</span>
+    <strong>(c) Wall-clock gap</strong> — <code>idle_gap_s = ts(next stored) − ts(last stored)
+    − accounted active time</code>. Directly answers "how long was nothing recorded," which is
+    the point of the field for time-accounting use cases. Falls back to (a) if the loop is
+    kept stateless.
+  </div>
+  <p>Decide, and consider making the <code>&gt;=</code> in
+  <span class="req">REQ-RECORD-002</span> an exact relation once the rule is fixed.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="06-capture-duration-rule.html">← 06 — Capture duration rule</a></span>
+    <span class="next"><span class="label">Next</span><a href="08-dedupe-hash-inputs.html">08 — Dedupe hash inputs →</a></span>
+  </nav>
+</main>
+</body>
+</html>

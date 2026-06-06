@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>23 — Environment failure simulation — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="verify">
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>23 — Simulating environment failures (permissions, missing deps, offline)</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-verify">Verification approach</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-007</span> (no permission → 6),
+      <span class="req">REQ-ENV-001</span> (macapptree missing → 6),
+      <span class="req">REQ-PREPROCESS-005</span> (model unavailable offline → 4)</div>
+  </div>
+</header>
+<main>
+  <h2>The gap</h2>
+  <p>Three exit codes depend on <strong>environmental fault states</strong> that are awkward
+  to produce on a healthy dev machine: revoked TCC permissions, an absent capture dependency,
+  and offline-with-uncached-weights. Without a way to induce them on demand, these codes can't
+  be tested reliably.</p>
+
+  <h2>Per-fault approach</h2>
+
+  <h3>Missing macOS permissions → exit 6 (<span class="req">RECORD-007</span>)</h3>
+  <p><code>tccutil reset ScreenCapture</code> / <code>Accessibility</code> works but does real
+  OS-state surgery.</p>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected, more portable</span>
+    Fault-injection seam <code>NORM_FORCE_NO_PERMISSION=screen|ax</code> — forces the
+    permission probe to report "denied," exercising the error path and message without touching
+    TCC. Keep one real-environment smoke test per permission type.
+  </div>
+
+  <h3>Missing macapptree → exit 6 (<span class="req">ENV-001</span>)</h3>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected</span>
+    Force its import to fail via <code>NORM_FORCE_NO_MACAPPTREE=1</code>, or shadow it on
+    <code>PYTHONPATH</code> with a stub module that raises <code>ImportError</code>. Assert
+    exit 6 and that the message names the dependency.
+  </div>
+
+  <h3>Model unavailable offline → exit 4 (<span class="req">PREPROCESS-005</span>)</h3>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected</span>
+    Two sub-cases to cover separately:
+    <ul style="margin:.4rem 0">
+      <li><strong>Weights unavailable:</strong> redirect <code>HF_HOME</code> to an empty
+      directory and block network (or set HF offline mode).</li>
+      <li><strong>Invalid model_ref:</strong> pass a nonsense string as <code>--model</code>.
+      Assert exit 4 and that the message distinguishes the two causes where possible.</li>
+    </ul>
+  </div>
+
+  <h2>Principle</h2>
+  <p>Prefer <strong>fault-injection env seams</strong> over real OS-state mutation so negative
+  tests are hermetic and CI-safe. Keep one real-environment smoke test per fault code to
+  confirm the seam faithfully represents the real path.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="22-capture-gating-test-harness.html">← 22 — Capture gating harness</a></span>
+    <span class="next"><span class="label">Next</span><a href="24-nondeterministic-report-assertions.html">24 — Nondeterministic report assertions →</a></span>
+  </nav>
+</main>
+</body>
+</html>

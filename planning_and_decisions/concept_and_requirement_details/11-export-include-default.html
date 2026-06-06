@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>11 — export --include default &amp; layout — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>11 — <code>export --include</code> default and output layout</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-spec">Spec clarification</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-DATA-005</span>; concept §10.15</div>
+  </div>
+</header>
+<main>
+  <h2>What's unclear</h2>
+  <p><code>export --from -1d --to now --out ./dump --include images,ax,reports</code> is
+  always shown with an explicit <code>--include</code>. Three things are undefined:</p>
+  <ul>
+    <li>What is exported when <code>--include</code> is <strong>omitted</strong> — all artifact
+    types, or is <code>--include</code> required?</li>
+    <li>What does <code>reports</code> mean — preprocess markdown only, or interval reports
+    too? (Interval reports aren't stored by default; see
+    <a href="12-interval-report-storage.html">[12]</a>.)</li>
+    <li>The on-disk layout under <code>./dump/</code> and exact filenames (compare:
+    <code>show --export</code> writes <code>1042.png</code>, <code>1042.ax.json</code>).</li>
+  </ul>
+
+  <h2>Why it matters</h2>
+  <p>A test invoking <code>export</code> needs to know which files to expect on disk.</p>
+
+  <h2>Options / suspected answer</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected</span>
+    <ul style="margin:.4rem 0">
+      <li><code>--include</code> defaults to <strong>all available types</strong>
+      (<code>images,ax,reports</code>).</li>
+      <li><code>reports</code> = stored <strong>preprocess</strong> markdown for the range.
+      Interval reports are produced on demand and not stored, so they're not exportable
+      (unless <a href="12-interval-report-storage.html">[12]</a> adds storage).</li>
+      <li>Layout: <code>./out/&lt;type&gt;/&lt;id&gt;.&lt;ext&gt;</code> — plaintext,
+      user-requested, consistent with <code>show --export</code> naming. E.g.
+      <code>./dump/images/1042.png</code>, <code>./dump/ax/1042.ax.json</code>,
+      <code>./dump/reports/&lt;window_id&gt;.md</code>.</li>
+    </ul>
+  </div>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="10-prune-cascade-semantics.html">← 10 — Prune cascade semantics</a></span>
+    <span class="next"><span class="label">Next</span><a href="12-interval-report-storage.html">12 — Interval report storage →</a></span>
+  </nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>20 — Negative security properties — norm</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.prop-table td:first-child { white-space: nowrap; font-weight: 600; font-size: .88rem; }
+.auto  { color: #3f7350; }
+.audit { color: #8a6314; }
+.label-auto  { background:#e1efe4; color:#3f7350; }
+.label-audit { background:var(--todo-bg); color:var(--todo-ink); }
+</style>
+</head>
+<body class="verify">
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>20 — Verifying "absence" security properties</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-verify">Verification approach</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-SEC-002</span> (login password never read),
+      <span class="req">REQ-SEC-006</span> (transient in-memory decryption),
+      <span class="req">REQ-RECORD-006</span> (key zeroed on exit)</div>
+  </div>
+</header>
+<main>
+  <h2>The gap</h2>
+  <p>These are <strong>negative guarantees</strong> — "X never happens." You can't prove a
+  universal negative with a single CLI call; each needs its own technique, and some are only
+  partially automatable.</p>
+
+  <h2>Per-property approach</h2>
+  <table class="prop-table">
+    <thead><tr><th>Property</th><th>Approach</th><th>Coverage</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Login password<br>never read<br><span class="req">SEC-002</span></td>
+        <td>
+          (i) Assert norm <em>never prompts</em> for the login password and runs
+          non-interactively given only <code>NORM_PASSPHRASE</code>/Keychain.<br>
+          (ii) <code>dtrace</code>/<code>fs_usage</code> during a run shows no access to
+          login-auth surfaces (PAM, <code>dscl</code>, login keychain).<br>
+          (iii) Code review that no login-auth path is called.
+        </td>
+        <td><span class="tag label-audit">Audit + construction</span></td>
+      </tr>
+      <tr>
+        <td>Transient in-memory<br>decryption<br><span class="req">SEC-006</span></td>
+        <td>
+          Run <code>report preprocess/interval</code> while watching <code>data_dir</code>,
+          <code>$TMPDIR</code>, and <code>/tmp</code> with FSEvents / <code>fs_usage</code>.
+          Assert <strong>no new plaintext PNG/JSON file</strong> appears during inference.
+          The fake model from <a href="16-inference-test-seam.html">[16]</a> can hold the
+          call open long enough to snapshot the filesystem mid-inference.
+        </td>
+        <td><span class="tag label-auto">Automatable</span></td>
+      </tr>
+      <tr>
+        <td>Key zeroed on exit<br><span class="req">RECORD-006</span></td>
+        <td>
+          Near-untestable as black-box. Options: a debug-build hook that re-reads the buffer
+          after zeroing and asserts it's clear; or accept as a code-review-only item.
+        </td>
+        <td><span class="tag label-audit">Code review only</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Recommendation</h2>
+  <p>Split this requirement set explicitly into <strong>automated</strong>
+  (transient-decryption FS watch) and <strong>manual/audit</strong> (login-password path, key
+  zeroing) acceptance items so the test plan is honest about coverage.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="19-keychain-key-and-acl-verification.html">← 19 — Keychain key &amp; ACL</a></span>
+    <span class="next"><span class="label">Next</span><a href="21-no-elevated-privileges-verification.html">21 — No elevated privileges →</a></span>
+  </nav>
+</main>
+</body>
+</html>

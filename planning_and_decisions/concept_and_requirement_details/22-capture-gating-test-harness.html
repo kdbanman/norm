@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>22 — Capture gating test harness — norm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="verify">
+<div class="topnav"><a href="README.html">← Index</a></div>
+<header>
+  <h1>22 — Making capture gating (idle + dedupe) deterministically testable</h1>
+  <div class="meta">
+    <div class="chips">
+      <span class="chip chip-verify">Verification approach</span>
+      <span class="chip chip-todo">Unresolved</span>
+    </div>
+    <div class="affects"><span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-001</span>,
+      <span class="req">REQ-RECORD-002</span> (idle),
+      <span class="req">REQ-RECORD-003/004</span> (dedupe); depends on
+      <a href="08-dedupe-hash-inputs.html">[08]</a></div>
+  </div>
+</header>
+<main>
+  <h2>The gap</h2>
+  <p>The idle gate reads real <code>HIDIdleTime</code>, and dedupe depends on real on-screen
+  pixels and the live AX tree. To assert "stored when present and changed," "skipped while
+  idle," "deduped when unchanged," and "stored when only one of phash/AX changes," a test
+  must <strong>control</strong> both the idle value and the captured frame/AX content —
+  neither of which is a CLI input today.</p>
+
+  <h2>Options</h2>
+  <div class="suspect">
+    <span class="tag tag-suspect">Suspected best</span>
+    <strong>(a) Injection seam</strong> — env/test hooks that feed a scripted idle value
+    (e.g. <code>NORM_FAKE_IDLE=180</code>) and a scripted frame + AX source
+    (<code>NORM_FAKE_CAPTURE=&lt;dir&gt;</code> of prepared image/AX pairs). Makes
+    <code>record --once</code> fully deterministic and lets us construct the exact phash/AX
+    combinations <span class="req">REQ-RECORD-003/004</span> require. Pairs with the
+    hash-input definition in <a href="08-dedupe-hash-inputs.html">[08]</a>.
+  </div>
+  <ul>
+    <li><strong>(b) Real-environment drive</strong> — leave the machine idle for N seconds for
+    the idle test; change/leave the screen for dedupe. Slow, flaky, and hard in CI; useful as
+    an occasional end-to-end smoke test only.</li>
+    <li><strong>(c) Below-the-CLI unit tests</strong> — test the gate/dedupe functions
+    directly. Strong and fast, but not a black-box CLI assertion. Acceptable under goal #2;
+    complements (a).</li>
+  </ul>
+  <p><strong>Recommendation: (a)</strong> for CLI-level acceptance tests +
+  <strong>(c)</strong> for the hash/threshold math.</p>
+
+  <div class="resolution">
+    <h2>Resolution</h2>
+    <p>TODO</p>
+  </div>
+  <nav class="botnav">
+    <span class="prev"><span class="label">Previous</span><a href="21-no-elevated-privileges-verification.html">← 21 — No elevated privileges</a></span>
+    <span class="next"><span class="label">Next</span><a href="23-environment-failure-simulation.html">23 — Environment failure simulation →</a></span>
+  </nav>
+</main>
+</body>
+</html>
