@@ -186,14 +186,13 @@ pre.example {
     <h3>Dependencies</h3>
     <p>norm is a Python CLI; both the capture and inference layers are Python libraries.</p>
     <ul>
-      <li><strong>macapptree</strong> — captures a screenshot of the visible apps and emits
-      their accessibility tree as JSON with element bounding boxes; the source of each frame's
-      image + AX data.</li>
+      <li><strong>macapptree</strong> — third-party macOS library that captures a screenshot
+      of the visible apps and emits their accessibility tree as JSON with element bounding
+      boxes; the source of each frame's image + AX data.</li>
       <li><strong>mlx-vlm</strong> — in-process MLX inference for vision-language models on
       Apple Silicon (loads the Gemma 4 weights).</li>
       <li><strong>imagehash (dHash)</strong> — perceptual hashing for content dedupe.</li>
-      <li><strong>SQLCipher (AES-256) + AES-256-GCM + Argon2id</strong> — encrypted index,
-      blob encryption, passphrase key-wrapping.</li>
+      <li><strong>SQLCipher (encrypted SQLite index) + AES-256-GCM (blob encryption) + Argon2id (passphrase wrapping)</strong>.</li>
       <li><strong>IOKit <code>HIDIdleTime</code></strong> — user-idle detection.</li>
     </ul>
   </section>

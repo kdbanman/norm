@@ -29,7 +29,9 @@
   <code>stride_j</code>, <code>--idle-threshold</code> ↔
   <code>idle_threshold_seconds</code>). Unknowns: do <code>--model</code>,
   <code>--data-dir</code>, <code>--max-tokens</code>, <code>--phash-threshold</code> exist as
-  flags? Several config keys have no flag and no requirement.</p>
+  flags? Several config keys have no flag and no requirement:
+  <code>max_tokens</code>, <code>phash_threshold</code>, <code>data_dir</code>,
+  <code>prompt_interval</code>. Are they CLI-overridable? Tested?</p>
 
   <h2>Why it matters</h2>
   <p>Goal #1 (comprehensive CLI assertions) needs the full flag inventory and the precedence
