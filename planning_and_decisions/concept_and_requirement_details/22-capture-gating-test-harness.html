@@ -18,8 +18,8 @@
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-RECORD-001</span>,
       <span class="req">REQ-RECORD-002</span> (idle),
-      <span class="req">REQ-RECORD-003/004</span> (dedupe); depends on
-      <a href="08-dedupe-hash-inputs.html">[08]</a></div>
+      <span class="req">REQ-RECORD-003/004</span> (dedupe); depends on the dedupe hash-input
+      definition in <a href="../norm-concept.html#s8">norm-concept §8</a></div>
   </div>
 </header>
 <main>
@@ -38,7 +38,7 @@
     (<code>NORM_FAKE_CAPTURE=&lt;dir&gt;</code> of prepared image/AX pairs). Makes
     <code>record --once</code> fully deterministic and lets us construct the exact phash/AX
     combinations <span class="req">REQ-RECORD-003/004</span> require. Pairs with the
-    hash-input definition in <a href="08-dedupe-hash-inputs.html">[08]</a>.
+    hash-input definition in <a href="../norm-concept.html#s8">norm-concept §8</a>.
   </div>
   <ul>
     <li><strong>(b) Real-environment drive</strong> — leave the machine idle for N seconds for

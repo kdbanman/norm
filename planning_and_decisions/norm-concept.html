@@ -263,10 +263,7 @@ pre.example {
     preprocess row's identity for idempotency is its ordered <code>capture_ids</code> set;
     <code>model</code> and <code>prompt_id</code> are provenance and do not by themselves trigger a
     recompute (use <code>--force</code>). <code>prompt_id = sha256(effective prompt text)</code> (short
-    prefix); the literal prompt text is persisted alongside for export/debug. See
-    <a href="concept_and_requirement_details/02-preprocess-row-invalidation.html">[02]</a>,
-    <a href="concept_and_requirement_details/03-prompt-id-definition.html">[03]</a>,
-    <a href="concept_and_requirement_details/12-interval-report-storage.html">[12]</a>.</p>
+    prefix); the literal prompt text is persisted alongside for export/debug.</p>
   </section>
 
   <section id="s7">
@@ -322,10 +319,6 @@ pre.example {
       <code>interval_minutes × 60</code>. Idle ticks add to <code>idle_gap_s</code>, not
       <code>duration_s</code>.</li>
     </ul>
-    <p style="font-size:.85rem;color:var(--muted)">Details:
-    <a href="concept_and_requirement_details/06-capture-duration-rule.html">[06]</a>,
-    <a href="concept_and_requirement_details/07-idle-gap-accumulation.html">[07]</a>,
-    <a href="concept_and_requirement_details/08-dedupe-hash-inputs.html">[08]</a>.</p>
   </section>
 
   <section id="s9">
@@ -362,10 +355,6 @@ pre.example {
       <li><strong>Unreproducible windows:</strong> <code>--force</code> skips windows whose source
       captures were pruned (frames can't be reloaded); the existing summary is left intact.</li>
     </ul>
-    <p style="font-size:.85rem;color:var(--muted)">Details:
-    <a href="concept_and_requirement_details/01-preprocess-window-coverage.html">[01]</a>,
-    <a href="concept_and_requirement_details/04-window-stride-edge-cases.html">[04]</a>,
-    <a href="concept_and_requirement_details/12-interval-report-storage.html">[12]</a>.</p>
   </section>
 
   <section id="s10">
@@ -624,10 +613,7 @@ after   FS/IDX: unchanged; no plaintext produced
     (distinct from a locked store, exit 3); <code>status</code> never fails (always exit 0, reporting
     <code>initialized</code>/<code>locked</code>/counts). Every failure also carries a stable string
     code, surfaced under <code>--json</code> as <code>{"error":{"code","exit","message"}}</code> (e.g.
-    <code>STORE_LOCKED</code>, <code>COVERAGE_MISSING</code>, <code>NOT_ENOUGH_CAPTURES</code>). See
-    <a href="concept_and_requirement_details/09-uninitialized-store-behavior.html">[09]</a>,
-    <a href="concept_and_requirement_details/13-failure-exit-code-precedence.html">[13]</a>,
-    <a href="concept_and_requirement_details/15-output-string-contract.html">[15]</a>.</p>
+    <code>STORE_LOCKED</code>, <code>COVERAGE_MISSING</code>, <code>NOT_ENOUGH_CAPTURES</code>).</p>
   </section>
 
   <section id="s12">
