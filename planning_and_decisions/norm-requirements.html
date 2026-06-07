@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>norm — Requirements</title>
-<link rel="stylesheet" href="concept_and_requirement_details/style.css">
+<link rel="stylesheet" href="style.css">
 <style>
 :root { --maxw: 62rem; --pass: #2d6a3f; --pass-bg: #edf7f0; --fail: #8a2c2c; --fail-bg: #fdf2f2; }
 
@@ -61,7 +61,7 @@
 
 <div class="topbar" style="max-width:var(--maxw);margin-inline:auto">
   <span>norm · planning &amp; decisions</span>
-  <span><a href="norm-concept.html">← Concept</a> · <a href="concept_and_requirement_details/README.html">Detail docs</a></span>
+  <span><a href="norm-concept.html">← Concept</a></span>
 </div>
 
 <header style="max-width:var(--maxw);margin-inline:auto">
@@ -196,7 +196,28 @@ const DATA = {
       {"key":"max_tokens","flag":"--max-tokens","commands":"report preprocess, report interval"},
       {"key":"prompt_preprocess","flag":"--prompt-preprocess","commands":"report preprocess"},
       {"key":"prompt_interval","flag":"--prompt-interval","commands":"report interval"}
-    ]
+    ],
+    "verification": {
+      "principle": "Each requirement is a black-box CLI test. Properties that aren't observable at the CLI — in-process inference, encryption at rest, negative security guarantees — are verified with hidden test seams or out-of-band inspection, never by asserting on generated report prose.",
+      "test_seams": {
+        "NORM_FAKE_MODEL=1": "Swaps mlx-vlm load()/generate() for a spy that returns canned markdown and appends one JSON record per call — {model_ref, prompt, prompt_id, n_images, has_ax_text} — to a trace file the test reads. Removes the multi-GB weight dependency and makes report tests fast, deterministic, and assertable on generate() inputs (ARCH-001, PREPROCESS-002, INTERVAL-001, CONFIG-003/004).",
+        "NORM_FAKE_IDLE=<seconds>": "Feeds a scripted HIDIdleTime so record --once can be driven idle or active on demand (RECORD-002).",
+        "NORM_FAKE_CAPTURE=<dir>": "Supplies prepared image+AX pairs in place of macapptree, letting tests construct the exact phash/AX combinations RECORD-001/003/004 require.",
+        "NORM_FORCE_NO_PERMISSION=screen|ax": "Forces the permission probe to report denied → exit 6, without touching TCC (RECORD-007).",
+        "NORM_FORCE_NO_MACAPPTREE=1": "Forces the macapptree import to fail → exit 6, without uninstalling it (ENV-001)."
+      },
+      "seam_note": "NORM_FAKE_*/NORM_FORCE_* are hidden, test-only seams — never product features. NORM_PASSPHRASE, NORM_OLD_PASSPHRASE, and NORM_NEW_PASSPHRASE are supported user-facing env vars (non-interactive unlock and password rotation).",
+      "report_assertions": "Report content is nondeterministic: never assert on report prose. Assert only structure, side effects, and inputs to generate() — encrypted markdown was written, row count equals the expected window count, row fields (window_start/end, capture_ids, model, prompt_id), exit code, stdout-vs-output routing, and (via --dry-run or the NORM_FAKE_MODEL trace) the model_ref, prompt/prompt_id, and both modalities that reached generate(). With NORM_FAKE_MODEL the canned markdown makes even output-shape checks exact; real-weights runs are occasional smoke tests asserting only 'non-empty markdown, exit 0'.",
+      "techniques": {
+        "No network / inference server (ARCH-001, INIT-004)": "Run report under a socket monitor (lsof -nP -p <pid>, or dtrace/fs_usage on connect()/listen()). With NORM_FAKE_MODEL expect zero sockets. Add a real-weights 'cached by init, then offline' run to prove in-process inference still produces a report.",
+        "Ciphertext at rest (SEC-001)": "Inspect data_dir files directly, no norm involved: blobs must not begin with PNG/JPEG magic and must fail to decode; AX blobs fail json.loads(); the index lacks the 'SQLite format 3\\0' header; key.json holds only the Argon2id-wrapped key. Add an entropy check (near-random bytes) and a show --export round-trip to prove the files are encrypted real data.",
+        "Transient decryption (SEC-006)": "FS-watch data_dir, $TMPDIR, and /tmp during report; assert no plaintext PNG/JSON appears mid-inference. NORM_FAKE_MODEL can hold the call open long enough to snapshot the filesystem.",
+        "No elevation (SEC-003, RECORD-009)": "Run the whole suite as an unprivileged user with no sudo on PATH; every command succeeds or fails for its documented reason, never a privilege error. find created files for setuid/setgid bits and root ownership. Assert record --install creates a user LaunchAgent (~/Library/LaunchAgents, gui domain), not a /Library/LaunchDaemons root daemon — confirm via launchctl print gui/<uid>/<label>.",
+        "No login-auth surface (SEC-002)": "dtrace/fs_usage shows no access to PAM, dscl, or the login keychain; assert no norm Keychain item exists (security find-generic-password -s 'norm:datakey' finds nothing).",
+        "Capture-gating math (RECORD-003/004)": "Unit-test the phash / normalized-AX hashing and thresholds directly, below the CLI, to complement the seam-driven black-box tests."
+      },
+      "coverage": "Acceptance items are split honestly: automated (socket/FS monitors, magic-byte and entropy checks, seam-driven exit codes, --dry-run and trace assertions) vs. audit / code-review-only — key-zeroing-on-exit (RECORD-006) and the login-password-never-read path (SEC-002). Manual items are scoped to the threat model: other user accounts and same-user-while-idle, NOT active malware or live memory capture."
+    }
   },
   "requirements": [
     {"id":"REQ-GLOBAL-001","category":"global","title":"Version flag","command":"norm --version","preconditions":[],"pass_if":["stdout matches a semantic version string","exit_code == 0","stderr is empty"],"fail_if":["exit_code != 0","no version printed"]},
@@ -430,6 +451,56 @@ function renderConventions() {
     cf.innerHTML = '<h3>Command flags <span style="font-weight:400;color:var(--muted)">(non-config; per command)</span></h3>';
     cf.appendChild(listEl(C.command_flags));
     sec.appendChild(cf);
+  }
+
+  // verification & test seams
+  if (C.verification) {
+    const V = C.verification;
+    sec.appendChild(el('div', null, '<h2 style="margin-top:1.8rem">Verification &amp; test seams</h2>'));
+
+    if (V.principle) {
+      sec.appendChild(el('div','conv-card',
+        `<p style="font-size:.88rem;color:#555;margin:.2rem 0">${esc(V.principle)}</p>`));
+    }
+
+    if (V.test_seams) {
+      const ts = el('div','conv-card');
+      ts.innerHTML = '<h3>Hidden test seams <span style="font-weight:400;color:var(--muted)">(env vars; test-only, not product features)</span></h3>';
+      const tbl = document.createElement('table');
+      tbl.style.fontSize = '.82rem';
+      Object.entries(V.test_seams).forEach(([k,v]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="vertical-align:top;white-space:nowrap"><code>${esc(k)}</code></td><td>${esc(v)}</td>`;
+        tbl.appendChild(tr);
+      });
+      ts.appendChild(tbl);
+      if (V.seam_note) ts.innerHTML += `<p style="font-size:.84rem;color:var(--muted);margin-top:.5rem">${esc(V.seam_note)}</p>`;
+      sec.appendChild(ts);
+    }
+
+    if (V.report_assertions) {
+      sec.appendChild(el('div','conv-card',
+        `<h3>Asserting on reports</h3><p style="font-size:.86rem;color:#555;margin:.2rem 0">${esc(V.report_assertions)}</p>`));
+    }
+
+    if (V.techniques) {
+      const tq = el('div','conv-card');
+      tq.innerHTML = '<h3>Verification techniques <span style="font-weight:400;color:var(--muted)">(per property)</span></h3>';
+      const tbl = document.createElement('table');
+      tbl.style.fontSize = '.82rem';
+      Object.entries(V.techniques).forEach(([k,v]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="vertical-align:top;font-weight:600;padding-right:.7rem;min-width:9rem">${esc(k)}</td><td>${esc(v)}</td>`;
+        tbl.appendChild(tr);
+      });
+      tq.appendChild(tbl);
+      sec.appendChild(tq);
+    }
+
+    if (V.coverage) {
+      sec.appendChild(el('div','conv-card',
+        `<h3>Coverage honesty <span style="font-weight:400;color:var(--muted)">(automated vs. audit)</span></h3><p style="font-size:.86rem;color:#555;margin:.2rem 0">${esc(V.coverage)}</p>`));
+    }
   }
 }
 
