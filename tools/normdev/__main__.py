@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from tools.normdev import concept
+from tools.normdev import decisions as decs
 from tools.normdev import requirements as reqs
 from tools.normdev import run as run_mod
 from tools.normdev import smoke as smoke_mod
@@ -56,6 +57,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_show = req_sub.add_parser("show", help="show one requirement in full")
     p_show.add_argument("id", help="requirement id, e.g. REQ-RECORD-005")
 
+    p_dec = sub.add_parser("dec", help="query the decision records (ADRs)")
+    dec_sub = p_dec.add_subparsers(dest="dec_command", required=True)
+    dec_sub.add_parser("list", help="list every ADR (id, status, title)")
+    p_dec_show = dec_sub.add_parser("show", help="show one ADR in full (untruncated)")
+    p_dec_show.add_argument("id", help="ADR id, e.g. ADR-006 (or just 6)")
+
     return parser
 
 
@@ -105,6 +112,26 @@ def _cmd_req_show(req_id: str) -> int:
     return 0
 
 
+def _cmd_dec_list() -> int:
+    rows = decs.load_decisions()
+    for d in rows:
+        print(f"  {d.id:<9} [{d.status or '?'}]  {d.title}")
+    print(f"\n{len(rows)} decision record(s)")
+    return 0
+
+
+def _cmd_dec_show(adr_id: str) -> int:
+    try:
+        d = decs.find(adr_id)
+    except KeyError:
+        print(f"no such decision record: {adr_id}", file=sys.stderr)
+        return 2
+    print(f"{d.id} — {d.title}  [{d.status or '?'}]")
+    print()
+    print(d.body)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "smoke":
@@ -124,6 +151,11 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_req_list(args.category, args.outstanding)
         if args.req_command == "show":
             return _cmd_req_show(args.id)
+    if args.command == "dec":
+        if args.dec_command == "list":
+            return _cmd_dec_list()
+        if args.dec_command == "show":
+            return _cmd_dec_show(args.id)
     return 2
 
 

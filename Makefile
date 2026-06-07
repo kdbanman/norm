@@ -3,7 +3,7 @@
 # For arg-taking commands (e.g. `req show <ID>`, `smoke --keep`) call the dev CLI
 # directly: `uv run python -m tools.normdev <subcommand> ...`.
 
-.PHONY: sync test smoke req req-todo
+.PHONY: sync test smoke req req-todo dec
 
 sync:           ## create/refresh the venv and install (editable) + dev deps
 	uv sync
@@ -19,3 +19,6 @@ req:            ## list all requirements (✓ = referenced by a test)
 
 req-todo:       ## list only the requirements no test references yet
 	uv run python -m tools.normdev req list --outstanding
+
+dec:            ## list the decision records (ADRs); `dec show <ID>` for one in full
+	uv run python -m tools.normdev dec list

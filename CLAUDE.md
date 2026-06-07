@@ -13,7 +13,11 @@ The planning docs are the source of truth — read the relevant one before chang
   `planning_and_decisions/norm-requirements.html`
 - **Decision records** — `planning_and_decisions/` (see Documentation discipline below)
 
-(These are large; open them when relevant rather than loading them every session, and prefer working with the developer tooling, `normdev`.)
+(These are large; open them when relevant rather than loading them every session, and
+prefer the `normdev` readers — `req` for requirements, `dec` for decision records, plus the
+concept worked examples cross-linked from `req show`. Do **not** hand-scrape the planning
+HTML with ad-hoc shell/Python: it loses structure, leaves HTML entities raw, and silently
+truncates the newest records.)
 
 ## Development workflow
 
@@ -116,3 +120,7 @@ cases; call the module directly for arg-taking forms:
 - `uv run python -m tools.normdev req show REQ-XXX-NNN` — full pass/fail criteria for one
   requirement, where it's referenced, **and the matching concept §10.x worked example**.
   Use this to pick the next RED target without hand-slicing the planning HTML.
+- `make dec` (`uv run python -m tools.normdev dec list`) / `uv run python -m tools.normdev
+  dec show ADR-NNN` — list the decision records, or print one ADR in full (tags stripped,
+  entities decoded, **untruncated**). Read these instead of scraping `norm-decisions.html`
+  by hand; `dec show` accepts `ADR-006`, `adr-6`, or just `6`.

@@ -13,6 +13,7 @@ import json
 import pytest
 
 from tools.normdev import concept
+from tools.normdev import decisions as decs
 from tools.normdev import requirements as reqs
 from tools.normdev import run as run_mod
 from tools.normdev import smoke
@@ -150,3 +151,82 @@ def test_req_show_includes_the_concept_example(capsys):
     assert code == 0
     assert "§10.17" in out
     assert "norm config set" in out
+
+
+# ── decisions: read the ADRs instead of hand-scraping the HTML ────────────────
+#
+# These pin the behaviour that replaces the ad-hoc "strip tags, take [:4000]"
+# heredoc agents kept re-deriving: the reader must load *every* ADR in document
+# order, decode HTML entities, and never truncate the tail (ADR-006 lives there).
+
+
+def test_load_decisions_reads_every_record_in_order():
+    rows = decs.load_decisions()
+    ids = [d.id for d in rows]
+    assert ids == ["ADR-001", "ADR-002", "ADR-003", "ADR-004", "ADR-005", "ADR-006"]
+    one = rows[0]
+    assert one.title.startswith("Encrypted index")  # heading minus the "ADR-001 — " prefix
+    assert one.status == "resolved"  # from the <div class="resolution resolved">
+    assert one.body  # populated, not empty
+
+
+def test_decision_bodies_are_decoded_and_free_of_html_chrome():
+    corpus = "\n".join(d.body for d in decs.load_decisions())
+    # entities are decoded, not left as raw tokens
+    for raw in ("&amp;", "&rarr;", "&nbsp;", "&lt;", "&gt;", "&ge;"):
+        assert raw not in corpus
+    assert "→" in corpus  # &rarr; decoded; proves unescaping ran
+    # `&lt;`/`&gt;` in code survive as real angle brackets, not eaten as tags
+    assert "ts < end" in corpus
+    # ...but structural HTML chrome is gone
+    for chrome in ("<div", "<span", "<h2", 'class="resolution"', "</p>"):
+        assert chrome not in corpus
+
+
+def test_decisions_are_not_truncated_head_and_tail_both_present():
+    rows = decs.load_decisions()
+    bodies = {d.id: d.body for d in rows}
+    # the [:4000] hack kept only the head; the tail ADR (ADR-006) must load in full
+    assert "REQ-GLOBAL-002" in bodies["ADR-006"]
+    assert "one-liners every session" in bodies["ADR-006"]  # body text, not just heading
+    assert "AES-256-GCM" in bodies["ADR-001"]  # head still there too
+    assert sum(len(b) for b in bodies.values()) > 6000  # well past the 4000-char cut
+
+
+def test_find_decision_normalizes_input_and_raises_on_miss():
+    assert decs.find("ADR-006").id == "ADR-006"
+    assert decs.find("adr-6").id == "ADR-006"  # case- and zero-pad-insensitive
+    assert decs.find("6").id == "ADR-006"  # bare number is enough
+    with pytest.raises(KeyError):
+        decs.find("ADR-999")
+
+
+def test_dec_list_prints_every_record_with_status(capsys):
+    from tools.normdev import __main__ as cli
+
+    code = cli._cmd_dec_list()
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "ADR-001" in out and "ADR-006" in out
+    assert "[resolved]" in out
+    assert "6 decision record(s)" in out
+
+
+def test_dec_show_prints_full_untruncated_record(capsys):
+    from tools.normdev import __main__ as cli
+
+    code = cli._cmd_dec_show("ADR-006")  # the record the truncating hack dropped
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "ADR-006" in out and "[resolved]" in out
+    assert "REQ-GLOBAL-002" in out  # body present, not just the heading
+    assert "dev-only CLI" in out
+
+
+def test_dec_show_unknown_id_returns_2(capsys):
+    from tools.normdev import __main__ as cli
+
+    code = cli._cmd_dec_show("ADR-404")
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "ADR-404" in err

@@ -10,6 +10,9 @@ Subcommands:
 * ``req`` — query the requirements doc (``norm-requirements.html``): list
   requirements, show one in full (with the matching concept worked example), or
   list the ones no test references yet.
+* ``dec`` — query the decision records (``norm-decisions.html``): list every ADR
+  or show one in full. Replaces hand-scraping the HTML, which loses structure,
+  leaves entities raw, and silently truncates the newest records.
 
 The shared ephemeral-store driver lives in :mod:`tools.normdev.harness` and is
 the single source of truth for "drive ``python -m norm`` against an isolated
