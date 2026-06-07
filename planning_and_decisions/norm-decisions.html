@@ -58,6 +58,73 @@
     </div>
   </section>
 
+  <section id="adr-002">
+    <h2>ADR-002 — Capture timestamps: local-naive ISO seconds, half-open range queries</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-DATA-002</span>
+      <span class="req">REQ-GLOBAL-009</span>
+      · concept §6, §10.13 · binds <span class="req">REQ-RECORD-001</span>,
+      <span class="req">REQ-DATA-006</span>
+    </p>
+
+    <p><strong>Context.</strong> <code>capture.ts</code> is <code>TEXT</code> in the
+    index (ADR-001). <code>list</code> (and later <code>prune</code>/<code>export</code>)
+    filter by a <code>--from/--to</code> range. SQLite text comparison is lexicographic,
+    so range filtering is only correct if every <code>ts</code> shares one fixed,
+    sortable string form.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> Stored <code>ts</code> is
+      <strong>local-naive ISO-8601 to seconds</strong> (e.g.
+      <code>2026-06-06T12:00:00</code>, no offset). Range bounds resolve against one
+      command-start <code>now</code> (<code>timerange.parse_range</code>) and render to
+      the same form via <code>timerange.to_db_ts()</code>; queries are
+      <strong>half-open</strong> <code>[start, end)</code> — <code>ts &gt;= start AND
+      ts &lt; end</code>. The recorder (REQ-RECORD-001) must write <code>ts</code> in
+      exactly this form.</p>
+      <p class="rationale">Lexicographic order matches chronological order for a single
+      fixed-width local form, so filtering and <code>ORDER BY ts</code> need no date
+      parsing in SQL. Half-open ranges compose without double-counting boundaries and
+      align with <code>prune --before</code> (<code>ts &lt; cutoff</code>, REQ-DATA-006).
+      Trade-off: a DST/offset change can locally reorder rows across the transition —
+      acceptable for a personal activity log; an explicit-offset ISO value passed on
+      <code>--from/--to</code> is compared in its own wall-clock, not converted.</p>
+    </div>
+  </section>
+
+  <section id="adr-003">
+    <h2>ADR-003 — argparse: global flags either side of the subcommand; leading-dash time values</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-GLOBAL-008</span>
+      <span class="req">REQ-DATA-002</span>
+      <span class="req">REQ-GLOBAL-009</span>
+    </p>
+
+    <p><strong>Context.</strong> The contract wants <code>--json</code> both before
+    (<code>norm --json list</code>, REQ-GLOBAL-008) and after
+    (<code>norm list --json</code>, REQ-DATA-002) the subcommand, and relative time
+    values like <code>--from -1h</code> (REQ-GLOBAL-009). Plain argparse fights both:
+    a subparser flag with a normal default resets the value parsed before the
+    subcommand, and a token beginning with <code>-</code> is taken as an unknown
+    option, not a value.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> Each global flag is declared on the
+      top-level parser (real defaults) <em>and</em> on every subparser with
+      <code>default=argparse.SUPPRESS</code>, so an absent post-subcommand flag leaves
+      the pre-subcommand value intact (<code>cli._add_global_flags</code>). Subparsers
+      that take <code>--from/--to/--last</code> widen
+      <code>parser._negative_number_matcher</code> to <code>^-\d+[smhdw]?$</code>
+      (<code>timerange.allow_relative_time_values</code>) so <code>-1h</code>/<code>-30d</code>
+      parse as values.</p>
+      <p class="rationale">Both are the standard argparse idioms for these problems and
+      keep the flag surface declared in one place. Safe because no norm subcommand has
+      numeric or short-option flags that could collide with the widened matcher.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

@@ -103,6 +103,52 @@ def create_index(path: Path, data_key: bytes) -> None:
         con.close()
 
 
+def counts(con: sqlite3.Connection) -> dict:
+    """Summary counters for ``status`` (REQ-DATA-001), read from the index alone.
+
+    No blob is decrypted: every figure comes from index metadata.
+    """
+    captures, last_capture = con.execute(
+        "SELECT COUNT(*), MAX(ts) FROM capture"
+    ).fetchone()
+    return {
+        "captures": captures,
+        "last_capture": last_capture,
+        "preprocess": con.execute("SELECT COUNT(*) FROM preprocess").fetchone()[0],
+        "interval_reports": con.execute(
+            "SELECT COUNT(*) FROM interval_report"
+        ).fetchone()[0],
+    }
+
+
+# Capture columns surfaced by `list` (REQ-DATA-002 / concept §10.13).
+_LIST_COLUMNS = ("id", "ts", "active_app", "idle_gap_s", "duration_s")
+
+
+def list_captures(
+    con: sqlite3.Connection,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[dict]:
+    """Return capture metadata in ``[start, end)`` (half-open), ordered by ``ts``.
+
+    Bounds are local-naive ISO strings (see :func:`norm.timerange.to_db_ts`); either
+    may be ``None`` for an open end.
+    """
+    sql = f"SELECT {', '.join(_LIST_COLUMNS)} FROM capture"
+    clauses, params = [], []
+    if start is not None:
+        clauses.append("ts >= ?")
+        params.append(start)
+    if end is not None:
+        clauses.append("ts < ?")
+        params.append(end)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY ts"
+    return [dict(zip(_LIST_COLUMNS, row)) for row in con.execute(sql, params)]
+
+
 def _atomic_write(path: Path, data: bytes) -> None:
     """Write ``data`` to ``path`` atomically and owner-only (temp file, then rename)."""
     tmp = path.with_name(path.name + ".tmp")

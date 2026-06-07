@@ -18,12 +18,13 @@ import sys
 from pathlib import Path
 
 from norm import config as config_mod
-from norm import crypto, errors, passphrase
+from norm import crypto, errors, passphrase, session
 from norm import store as store_mod
 
-KEY_FILE = "key.json"
-INDEX_FILE = "index.db"
-BLOBS_DIR = "blobs"
+# Store layout constants live in norm.session (the shared store-access module).
+KEY_FILE = session.KEY_FILE
+INDEX_FILE = session.INDEX_FILE
+BLOBS_DIR = session.BLOBS_DIR
 
 
 def configure(parser: argparse.ArgumentParser) -> None:
