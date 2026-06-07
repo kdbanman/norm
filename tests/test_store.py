@@ -64,12 +64,13 @@ def test_flush_persists_changes(tmp_path):
 
 
 def _add_capture(con, ts, app="App"):
-    con.execute(
+    cur = con.execute(
         "INSERT INTO capture "
         "(ts, active_app, idle_gap_s, phash, ax_hash, image_ref, ax_ref, duration_s) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (ts, app, 0, "ph", "ax", "img", "axref", 60),
     )
+    return int(cur.lastrowid)
 
 
 def _open(tmp_path):
@@ -116,3 +117,24 @@ def test_list_captures_filters_by_range_half_open(tmp_path):
     rows = store.list_captures(con, start="2026-06-06T11:00:00", end="2026-06-06T13:00:00")
     # start inclusive, end exclusive
     assert [r["ts"] for r in rows] == ["2026-06-06T11:00:00"]
+
+
+# ── get_capture (REQ-DATA-003 / REQ-DATA-004) ─────────────────────────────────
+
+
+def test_get_capture_returns_row_with_refs(tmp_path):
+    con = _open(tmp_path)
+    cid = _add_capture(con, "2026-06-06T10:00:00", app="Safari")
+    row = store.get_capture(con, cid)
+    assert row["id"] == cid
+    assert row["active_app"] == "Safari"
+    # Blob refs are returned for show --export, alongside the user-facing metadata.
+    assert row["image_ref"] == "img"
+    assert row["ax_ref"] == "axref"
+    assert set(store.META_COLUMNS) <= set(row)
+
+
+def test_get_capture_missing_id_returns_none(tmp_path):
+    con = _open(tmp_path)
+    _add_capture(con, "2026-06-06T10:00:00")
+    assert store.get_capture(con, 99999999) is None

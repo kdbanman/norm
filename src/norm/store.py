@@ -148,6 +148,26 @@ def list_captures(
     return [dict(zip(_LIST_COLUMNS, row)) for row in con.execute(sql, params)]
 
 
+# User-facing capture metadata for `show`: list's columns plus the dedupe hashes.
+# The blob refs are fetched alongside (so `show --export` can decrypt them) but are
+# internal, so they are kept out of META_COLUMNS and dropped from displayed output.
+META_COLUMNS = (*_LIST_COLUMNS, "phash", "ax_hash")
+_CAPTURE_COLUMNS = (*META_COLUMNS, "image_ref", "ax_ref")
+
+
+def get_capture(con: sqlite3.Connection, capture_id: int) -> dict | None:
+    """Return one capture's full row (metadata + hashes + blob refs), or ``None``.
+
+    ``None`` lets the caller map a missing id to ``UNKNOWN_ID`` (REQ-DATA-004); no
+    blob is read here — decryption is the caller's transient concern (REQ-SEC-006).
+    """
+    row = con.execute(
+        f"SELECT {', '.join(_CAPTURE_COLUMNS)} FROM capture WHERE id = ?",
+        (capture_id,),
+    ).fetchone()
+    return dict(zip(_CAPTURE_COLUMNS, row)) if row else None
+
+
 # ── write side (record) ─────────────────────────────────────────────────────────
 
 # Fields carried on the "last stored capture" used by the dedupe gate (concept §8).

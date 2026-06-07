@@ -50,6 +50,10 @@ def not_initialized(message: str) -> NormError:
     return NormError("NOT_INITIALIZED", ExitCode.NOT_FOUND, message)
 
 
+def unknown_id(message: str) -> NormError:
+    return NormError("UNKNOWN_ID", ExitCode.NOT_FOUND, message)
+
+
 def permission_missing(message: str) -> NormError:
     return NormError("PERMISSION_MISSING", ExitCode.ENVIRONMENT_ERROR, message)
 
