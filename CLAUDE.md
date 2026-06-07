@@ -105,7 +105,15 @@ cases; call the module directly for arg-taking forms:
 - `make smoke` (`uv run python -m tools.normdev smoke [--keep]`) — stand up a throwaway
   encrypted store, drive `init`/`record`/`status`/`list` end-to-end through the capture
   seams, check the contract, and tear it down. Replaces ad-hoc `rm -rf /tmp/normsmoke; …`.
+- `uv run python -m tools.normdev run [--base DIR] [--keep] [--capture] [--locked]
+  [--no-init] <norm args>` — run **one arbitrary** `norm` command against an ephemeral,
+  auto-provisioned store (passphrase + fake-capture seams pre-wired); the norm command's
+  stdout is forwarded verbatim so it stays pipeable. `--base DIR` reuses/persists a store
+  across calls for a manual poke-session. The scriptable companion to `smoke` — use it
+  instead of hand-rolling `mkdir /tmp/x; export NORM_PASSPHRASE; norm --config … init; …`
+  to eyeball a new command's behaviour.
 - `make req` / `make req-todo` (`uv run python -m tools.normdev req list [--outstanding]`)
   — list requirements (`✓` = referenced by a test) or just the ones no test covers yet.
 - `uv run python -m tools.normdev req show REQ-XXX-NNN` — full pass/fail criteria for one
-  requirement, plus where it's referenced. Use this to pick the next RED target.
+  requirement, where it's referenced, **and the matching concept §10.x worked example**.
+  Use this to pick the next RED target without hand-slicing the planning HTML.

@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 
+from tools.normdev import concept
 from tools.normdev import requirements as reqs
+from tools.normdev import run as run_mod
 from tools.normdev import smoke as smoke_mod
 
 
@@ -24,6 +26,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_smoke.add_argument(
         "--base", metavar="DIR", help="use DIR as the store root (implies --keep semantics)"
+    )
+
+    p_run = sub.add_parser(
+        "run", help="run an arbitrary norm command against an ephemeral store"
+    )
+    p_run.add_argument("--base", metavar="DIR", help="reuse/persist the store here (else a temp dir)")
+    p_run.add_argument("--keep", action="store_true", help="keep a temp store after running")
+    p_run.add_argument("--no-init", dest="no_init", action="store_true", help="don't auto-provision the store")
+    p_run.add_argument("--capture", action="store_true", help="inject a fake capture frame (for record)")
+    p_run.add_argument("--idle", type=int, default=0, metavar="SECONDS", help="fake idle seconds (with --capture)")
+    p_run.add_argument("--locked", action="store_true", help="run with no passphrase (a locked store)")
+    p_run.add_argument(
+        "argv",
+        nargs=argparse.REMAINDER,
+        metavar="-- norm args",
+        help="the norm command to run (normdev flags must precede it), e.g. config set k v",
     )
 
     p_req = sub.add_parser("req", help="query the requirements doc")
@@ -80,6 +98,10 @@ def _cmd_req_show(req_id: str) -> int:
         print("referenced in:")
         for path in refs:
             print(f"  {path}")
+    for example in concept.for_requirement(req):
+        print(f"concept  : {example.section} {example.title}")
+        for line in example.body.splitlines():
+            print(f"         | {line}")
     return 0
 
 
@@ -87,6 +109,16 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "smoke":
         return smoke_mod.main(keep=args.keep, base=args.base)
+    if args.command == "run":
+        return run_mod.main(
+            base=args.base,
+            keep=args.keep,
+            no_init=args.no_init,
+            capture=args.capture,
+            idle=args.idle,
+            locked=args.locked,
+            argv=args.argv,
+        )
     if args.command == "req":
         if args.req_command == "list":
             return _cmd_req_list(args.category, args.outstanding)

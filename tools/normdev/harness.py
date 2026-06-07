@@ -20,9 +20,18 @@ import subprocess
 import sys
 from pathlib import Path
 
+from PIL import Image
+
 # The canonical non-interactive passphrase. Tests and smoke runs share it so a
 # store created by one is openable the same way by the other.
 PASSPHRASE = "correct horse battery staple"
+
+# A minimal AX tree for fabricated captures (one window, one button).
+DEFAULT_AX = {
+    "role": "AXWindow",
+    "title": "Editor",
+    "children": [{"role": "AXButton", "title": "OK"}],
+}
 
 
 class NormStore:
@@ -72,6 +81,59 @@ class NormStore:
         assert result.returncode == 0, result.stderr
         return result
 
+    def is_initialized(self) -> bool:
+        """True iff the store is provisioned, asked of the product itself.
+
+        Uses ``norm status`` (which never prompts or fails) rather than peeking at
+        on-disk files, so the harness stays a pure black-box driver.
+        """
+        result = self.run("status", "--json")
+        if result.returncode != 0:
+            return False
+        try:
+            return bool(json.loads(result.stdout).get("initialized"))
+        except (ValueError, AttributeError):
+            return False
+
     def json_out(self, result: subprocess.CompletedProcess[str]):
         """Parse a command's stdout as JSON (for ``--json`` invocations)."""
         return json.loads(result.stdout)
+
+
+# ── fabricated captures (shared by `smoke` and `run`) ─────────────────────────
+
+
+def gradient(*, vertical: bool = False, size: int = 64) -> Image.Image:
+    """A deterministic grayscale gradient — a stand-in screenshot for the seam."""
+    img = Image.new("L", (size, size))
+    px = img.load()
+    for y in range(size):
+        for x in range(size):
+            px[x, y] = (y if vertical else x) * 255 // size
+    return img
+
+
+def write_fake_frame(
+    dir_path: str | os.PathLike[str],
+    *,
+    image: Image.Image | None = None,
+    ax: dict | None = None,
+    app: str | None = "TextEdit",
+) -> str:
+    """Materialize an image+AX(+app) capture for the ``NORM_FAKE_CAPTURE`` seam.
+
+    Defaults give a single ready-to-use frame; callers needing distinct frames
+    (e.g. dedupe scenarios) pass explicit ``image`` / ``ax`` / ``app``.
+    """
+    out = Path(dir_path)
+    out.mkdir(parents=True, exist_ok=True)
+    (image if image is not None else gradient()).save(out / "image.png")
+    (out / "ax.json").write_text(json.dumps(ax if ax is not None else DEFAULT_AX))
+    if app is not None:
+        (out / "active_app.txt").write_text(app)
+    return str(out)
+
+
+def capture_env(frame_dir: str, *, idle: str = "0") -> dict[str, str]:
+    """The env that points ``record`` at a fabricated frame instead of the screen."""
+    return {"NORM_FAKE_CAPTURE": frame_dir, "NORM_FAKE_IDLE": idle}

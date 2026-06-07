@@ -4,8 +4,12 @@ Subcommands:
 
 * ``smoke`` — stand up a throwaway encrypted store and drive the real
   ``norm`` CLI end-to-end through the capture seams, then tear it down.
+* ``run`` — run a single arbitrary ``norm`` command against an ephemeral store
+  (auto-provisioned; passphrase + fake-capture seams wired in). The scriptable
+  companion to ``smoke`` for poking at a command by hand.
 * ``req`` — query the requirements doc (``norm-requirements.html``): list
-  requirements, show one in full, or list the ones no test references yet.
+  requirements, show one in full (with the matching concept worked example), or
+  list the ones no test references yet.
 
 The shared ephemeral-store driver lives in :mod:`tools.normdev.harness` and is
 the single source of truth for "drive ``python -m norm`` against an isolated
