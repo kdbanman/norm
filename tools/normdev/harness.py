@@ -172,3 +172,25 @@ def write_fake_frame(
 def capture_env(frame_dir: str, *, idle: str = "0") -> dict[str, str]:
     """The env that points ``record`` at a fabricated frame instead of the screen."""
     return {"NORM_FAKE_CAPTURE": frame_dir, "NORM_FAKE_IDLE": idle}
+
+
+def seed_captures(store: "NormStore", n: int, *, work_dir: str | os.PathLike[str]) -> None:
+    """Store ``n`` distinct captures by driving ``record --once`` ``n`` times.
+
+    Each frame carries a unique AX title (and alternating gradient), so its ax_hash
+    differs from the previous frame and the dedupe gate never collapses them — the
+    store ends with exactly ``n`` captures. Used by the report tests, which need a
+    known capture count to assert the window/stride math against.
+    """
+    work_dir = Path(work_dir)
+    for i in range(n):
+        ax = {
+            "role": "AXWindow",
+            "title": f"Window {i}",
+            "children": [{"role": "AXButton", "title": f"Button {i}"}],
+        }
+        frame = write_fake_frame(
+            work_dir / f"frame{i}", image=gradient(vertical=bool(i % 2)), ax=ax, app=f"App{i}"
+        )
+        result = store.run("record", "--once", extra_env=capture_env(frame))
+        assert result.returncode == 0, result.stderr

@@ -54,6 +54,22 @@ def unknown_id(message: str) -> NormError:
     return NormError("UNKNOWN_ID", ExitCode.NOT_FOUND, message)
 
 
+def no_captures(message: str) -> NormError:
+    return NormError("NO_CAPTURES", ExitCode.NOT_FOUND, message)
+
+
+def not_enough_captures(message: str) -> NormError:
+    return NormError("NOT_ENOUGH_CAPTURES", ExitCode.NOT_FOUND, message)
+
+
+def model_unavailable(message: str) -> NormError:
+    return NormError("MODEL_UNAVAILABLE", ExitCode.MODEL_ERROR, message)
+
+
+def invalid_model_ref(message: str) -> NormError:
+    return NormError("INVALID_MODEL_REF", ExitCode.MODEL_ERROR, message)
+
+
 def permission_missing(message: str) -> NormError:
     return NormError("PERMISSION_MISSING", ExitCode.ENVIRONMENT_ERROR, message)
 

@@ -15,6 +15,7 @@ from norm.commands import config as config_cmd
 from norm.commands import init as init_cmd
 from norm.commands import list_cmd
 from norm.commands import record as record_cmd
+from norm.commands import report as report_cmd
 from norm.commands import show as show_cmd
 from norm.commands import status as status_cmd
 from norm.errors import ExitCode, NormError, render_error
@@ -94,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     # to the _unimplemented default set above.
     init_cmd.configure(parsers["init"])
     record_cmd.configure(parsers["record"])
+    report_cmd.configure(parsers["report"])
     status_cmd.configure(parsers["status"])
     list_cmd.configure(parsers["list"])
     show_cmd.configure(parsers["show"])

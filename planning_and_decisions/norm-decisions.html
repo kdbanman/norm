@@ -90,6 +90,16 @@
       Trade-off: a DST/offset change can locally reorder rows across the transition —
       acceptable for a personal activity log; an explicit-offset ISO value passed on
       <code>--from/--to</code> is compared in its own wall-clock, not converted.</p>
+      <p class="rationale"><strong>Refinement (report iteration).</strong> Stored
+      <code>ts</code> stays second-resolution, but <code>to_db_ts()</code> renders range
+      <em>bounds</em> at full sub-second precision rather than truncating. A live
+      <code>now</code> bound carries microseconds, so it sorts <em>after</em> any capture
+      stamped in the same second; this keeps the half-open <code>[start, end)</code> end
+      inclusive of the current second, so <code>--last</code> / <code>--to now</code> still
+      cover a capture recorded in the same second the report runs (otherwise
+      <code>report preprocess</code> / <code>interval</code> would drop a just-recorded
+      frame). Whole-second inputs (microsecond 0) render unchanged, so explicit ISO
+      bounds and <code>prune --before</code> semantics are unaffected.</p>
     </div>
   </section>
 

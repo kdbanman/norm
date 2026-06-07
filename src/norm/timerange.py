@@ -135,9 +135,16 @@ def parse_range(
 
 
 def to_db_ts(instant: datetime) -> str:
-    """Render a range bound as a local-naive ISO-seconds string for index queries.
+    """Render a range bound as a local-naive ISO string for index queries.
 
     Range bounds share ``now``'s offset, which is the local offset capture rows are
     stored in, so dropping the tz yields a value comparable to stored ``ts`` text.
+
+    Sub-second precision is preserved (not truncated to whole seconds): captures are
+    stored at second resolution, so a live ``now`` bound carrying microseconds sorts
+    *after* any capture stamped in the current second. That keeps the half-open
+    ``[start, end)`` end inclusive of the present second, so ``--last``/``--to now``
+    still cover captures recorded in the same second the report runs. An explicit
+    whole-second input (microsecond 0) renders without a fractional part, unchanged.
     """
-    return instant.replace(tzinfo=None).isoformat(timespec="seconds")
+    return instant.replace(tzinfo=None).isoformat()

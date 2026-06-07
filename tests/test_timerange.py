@@ -86,3 +86,11 @@ def test_invalid_value_is_usage_error():
 def test_to_db_ts_is_naive_local_iso_seconds():
     ts = timerange.to_db_ts(NOW)
     assert ts == "2026-06-06T12:00:00"
+
+
+def test_to_db_ts_preserves_sub_second_so_now_end_includes_current_second():
+    # A live `now` carrying microseconds must sort after a same-second capture ts,
+    # so the half-open `[start, now)` end still covers captures recorded this second.
+    live = NOW.replace(microsecond=123456)
+    assert timerange.to_db_ts(live) == "2026-06-06T12:00:00.123456"
+    assert "2026-06-06T12:00:00" < timerange.to_db_ts(live)

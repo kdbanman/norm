@@ -215,6 +215,99 @@ def extend_duration(con: sqlite3.Connection, capture_id: int, add_seconds: int) 
     )
 
 
+# ── preprocess summaries (report) ────────────────────────────────────────────────
+
+# Provenance + content columns surfaced when reading preprocess rows back. Order
+# matches the dict keys callers expect; capture_ids is the canonical-JSON identity.
+_PREPROCESS_COLUMNS = (
+    "id", "window_start", "window_end", "capture_ids", "model", "prompt_id", "markdown_ref",
+)
+
+
+def insert_preprocess(
+    con: sqlite3.Connection,
+    *,
+    window_start: str,
+    window_end: str,
+    capture_ids: str,
+    model: str,
+    prompt_id: str,
+    prompt_text: str,
+    markdown_ref: str,
+) -> int:
+    """Insert one preprocess (window summary) row and return its id.
+
+    ``capture_ids`` is the window's canonical-JSON identity (see
+    :func:`norm.report.canonical_ids`); ``markdown_ref`` points at the encrypted blob.
+    """
+    cur = con.execute(
+        "INSERT INTO preprocess "
+        "(window_start, window_end, capture_ids, model, prompt_id, prompt_text, markdown_ref) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (window_start, window_end, capture_ids, model, prompt_id, prompt_text, markdown_ref),
+    )
+    return int(cur.lastrowid)
+
+
+def update_preprocess(
+    con: sqlite3.Connection,
+    row_id: int,
+    *,
+    window_start: str,
+    window_end: str,
+    model: str,
+    prompt_id: str,
+    prompt_text: str,
+    markdown_ref: str,
+) -> None:
+    """Overwrite an existing preprocess row in place (``--force`` recompute, PREPROCESS-003).
+
+    The window's ``capture_ids`` identity is unchanged, so it is not rewritten; only the
+    regenerated content + provenance are replaced (no new row is appended).
+    """
+    con.execute(
+        "UPDATE preprocess "
+        "SET window_start = ?, window_end = ?, model = ?, prompt_id = ?, "
+        "    prompt_text = ?, markdown_ref = ? "
+        "WHERE id = ?",
+        (window_start, window_end, model, prompt_id, prompt_text, markdown_ref, row_id),
+    )
+
+
+def preprocess_by_capture_ids(con: sqlite3.Connection, capture_ids: str) -> dict | None:
+    """The preprocess row whose window matches ``capture_ids`` exactly, or ``None``.
+
+    A window's identity is its ordered capture-id set, so this is the idempotency /
+    coverage probe: a present row means the window is already summarized (PREPROCESS-003).
+    """
+    row = con.execute(
+        "SELECT id, markdown_ref FROM preprocess WHERE capture_ids = ?", (capture_ids,)
+    ).fetchone()
+    return {"id": row[0], "markdown_ref": row[1]} if row else None
+
+
+def list_preprocess(
+    con: sqlite3.Connection, start: str | None = None, end: str | None = None
+) -> list[dict]:
+    """Preprocess rows whose window falls within ``[start, end]``, ordered by ``window_start``.
+
+    Both bounds are inclusive over the window's own ``window_start``/``window_end`` so a
+    row counts only when the whole window lies in range (the unit ``interval`` aggregates).
+    """
+    sql = f"SELECT {', '.join(_PREPROCESS_COLUMNS)} FROM preprocess"
+    clauses, params = [], []
+    if start is not None:
+        clauses.append("window_start >= ?")
+        params.append(start)
+    if end is not None:
+        clauses.append("window_end <= ?")
+        params.append(end)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY window_start, id"
+    return [dict(zip(_PREPROCESS_COLUMNS, row)) for row in con.execute(sql, params)]
+
+
 def get_meta(con: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
     """Read a value from the ``meta`` key/value table (e.g. buffered idle)."""
     row = con.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
