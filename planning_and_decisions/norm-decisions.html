@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>norm — Decision Records</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="topnav">
+  norm · planning &amp; decisions ·
+  <a href="norm-concept.html">Concept</a> ·
+  <a href="norm-requirements.html">Requirements</a>
+</nav>
+
+<header>
+  <h1>norm — Decision Records</h1>
+  <p class="lede">Extremely terse records of non-obvious decisions surfaced during
+  implementation that don't belong in the concept doc, the requirements doc, or a
+  commit message. Each refers out to durable ids (requirement ids, concept sections,
+  commit hashes).</p>
+</header>
+
+<main>
+
+  <section id="adr-001">
+    <h2>ADR-001 — Encrypted index: AES-256-GCM over serialized SQLite (not SQLCipher)</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-INIT-001</span>
+      <span class="req">REQ-SEC-001</span>
+      <span class="req">REQ-SEC-007</span>
+      · concept §6, §7
+    </p>
+
+    <p><strong>Context.</strong> The concept/requirements named SQLCipher for the index.
+    SQLCipher has no installable build for this target: no pip wheel for
+    arm64/CPython&nbsp;3.12 (only <code>manylinux_x86_64</code>), and it is not present
+    via Homebrew. The realistic alternative was <code>brew install sqlcipher</code> + a
+    source build of the <code>sqlcipher3</code> binding on every dev/CI machine.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> The index is an ordinary SQLite database
+      held <strong>in memory only</strong> while a command runs; at rest it is
+      <code>Connection.serialize()</code> &rarr; AES-256-GCM &rarr;
+      <code>data_dir/index.db</code>, and opened via the reverse
+      (<code>deserialize()</code>). Blob and key-wrapping crypto are unchanged
+      (AES-256-GCM blobs; Argon2id-wrapped data key).</p>
+      <p class="rationale">Pure Python (<code>cryptography</code> + stdlib
+      <code>sqlite3</code>), zero system dependencies. The security contract is
+      satisfied unchanged: the on-disk file carries no <code>SQLite format 3\0</code>
+      header and is unreadable without the data key (REQ-SEC-001). Trade-off vs.
+      SQLCipher's page-level encryption: the whole index is decrypted into process
+      memory while unlocked — acceptable for norm's short-lived commands and its threat
+      model, which already admits in-memory plaintext during operation, and the index
+      holds metadata only (blobs stay out of it). Approved by the maintainer.</p>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>

@@ -153,7 +153,7 @@ pre.example {
     end
 
     subgraph STORE["Encrypted store"]
-        DB["SQLCipher index"]
+        DB["Encrypted index\nAES-256-GCM over\nserialized SQLite"]
         BLOB["AES-256-GCM blobs\n(images, AX, markdown)"]
         KEY["Data key (256-bit)\nArgon2id-wrapped by app password\nwrapped key on disk; no Keychain"]
     end
@@ -175,7 +175,7 @@ pre.example {
       exit codes.</li>
       <li><strong>Capture engine (<code>record</code>):</strong> timed loop — idle gate,
       macapptree capture, dedupe, encrypted write.</li>
-      <li><strong>Encrypted store:</strong> SQLCipher index + AES-256-GCM blob files; data key
+      <li><strong>Encrypted store:</strong> AES-256-GCM-encrypted index + AES-256-GCM blob files; data key
       Argon2id-wrapped by the app password and stored on disk (no macOS Keychain).</li>
       <li><strong>Inference (<code>mlx-vlm</code>, in-process):</strong> loads Gemma 4 MLX
       weights; <code>generate()</code> with image + text.</li>
@@ -195,7 +195,7 @@ pre.example {
       <li><strong>mlx-vlm</strong> — in-process MLX inference for vision-language models on
       Apple Silicon (loads the Gemma 4 weights).</li>
       <li><strong>imagehash (dHash)</strong> — perceptual hashing for content dedupe.</li>
-      <li><strong>SQLCipher (encrypted SQLite index) + AES-256-GCM (blob encryption) + Argon2id (passphrase wrapping)</strong>.</li>
+      <li><strong>AES-256-GCM (encrypted index + blob encryption) + Argon2id (passphrase wrapping)</strong>.</li>
       <li><strong>IOKit <code>HIDIdleTime</code></strong> — user-idle detection.</li>
     </ul>
   </section>
@@ -262,8 +262,8 @@ pre.example {
     <p>Every <code>report interval</code> run is <strong>persisted</strong> as an encrypted row (and
     also emitted to stdout, or to <code>--output &lt;file&gt;</code> as plaintext). Re-running appends a
     new row, keyed by <code>generated_at</code>, so the report history is retained. Blob refs point to
-    encrypted files under <code>data_dir</code>; the index is an encrypted SQLCipher database in the
-    same directory.</p>
+    encrypted files under <code>data_dir</code>; the index is an AES-256-GCM-encrypted SQLite
+    database (serialized; held in memory only while a command runs) in the same directory.</p>
     <p style="font-size:.85rem;color:var(--muted)"><strong>Identity &amp; provenance.</strong> A
     preprocess row's identity for idempotency is its ordered <code>capture_ids</code> set;
     <code>model</code> and <code>prompt_id</code> are provenance and do not by themselves trigger a
@@ -277,7 +277,7 @@ pre.example {
       <li><strong>FileVault</strong> is volume-level full-disk encryption unlocked at login. It
       has no per-directory or per-process scope and is not norm's access gate. It remains
       compatible as an at-rest defense.</li>
-      <li><strong>At rest:</strong> SQLCipher (AES-256) index; AES-256-GCM blobs.</li>
+      <li><strong>At rest:</strong> AES-256-GCM-encrypted index (serialized SQLite) and AES-256-GCM blobs.</li>
       <li><strong>Key custody:</strong> a random 256-bit data key, Argon2id-wrapped by a norm
       app password and stored on disk (<code>data_dir/key.json</code>). <strong>No macOS Keychain
       is used.</strong> The login password is never read or stored.</li>
@@ -381,7 +381,7 @@ pre.example {
   <section id="s10">
     <h2>10. Worked examples</h2>
     <p style="font-size:.88rem;color:var(--muted)">State tags: <code>FS</code> filesystem,
-    <code>IDX</code> SQLCipher index rows, <code>KEY</code> wrapped data key file, <code>LD</code> launchd,
+    <code>IDX</code> encrypted index rows, <code>KEY</code> wrapped data key file, <code>LD</code> launchd,
     <code>PROC</code> process, <code>HF</code> Hugging Face weight cache,
     <code>OUT</code> stdout/stderr, <code>EXIT</code> exit code.
     <code>data_dir</code> default = <code>~/Library/Application Support/norm</code>.
@@ -397,7 +397,7 @@ before  FS: no ~/.norm; no data_dir      HF: default weights not cached
 action  prompt for app password (or read NORM_PASSPHRASE); write config dir; create store;
         mint 256-bit data key + Argon2id-wrap with the password; download default model
 after   FS: ~/.norm/ (dir, chmod 700) with config.toml (all default keys);
-            data_dir/index.db (SQLCipher header); data_dir/blobs/ (empty);
+            data_dir/index.db (AES-256-GCM ciphertext, no SQLite header); data_dir/blobs/ (empty);
             data_dir/key.json (Argon2id-wrapped data key)
         HF: default model weights cached (~/.cache/huggingface)
         OUT(stdout): config path + data_dir path     EXIT: 0

@@ -11,7 +11,8 @@ import argparse
 import sys
 
 from norm import __version__
-from norm.errors import ExitCode
+from norm.commands import init as init_cmd
+from norm.errors import ExitCode, NormError, render_error
 
 # Authoritative top-level command registry: (name, one-line help). Order is the
 # order shown in `norm --help` (REQ-GLOBAL-002).
@@ -50,6 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--config", metavar="PATH", help="Use an alternate config file."
     )
     parser.add_argument(
+        "--data-dir", metavar="PATH", help="Use an alternate data directory."
+    )
+    parser.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON."
     )
     parser.add_argument(
@@ -68,8 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="<command>",
         required=True,
     )
-    for name, help_text in COMMANDS:
-        subparsers.add_parser(name, help=help_text)
+    parsers = {
+        name: subparsers.add_parser(name, help=help_text) for name, help_text in COMMANDS
+    }
+
+    # Implemented commands configure their own flags + handler; the rest fall back
+    # to the _unimplemented default set above.
+    init_cmd.configure(parsers["init"])
 
     return parser
 
@@ -88,4 +97,8 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except NormError as err:
+        render_error(err, json_mode=getattr(args, "json", False))
+        return int(err.exit_code)
