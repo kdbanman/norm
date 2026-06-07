@@ -77,9 +77,19 @@ See the requirements doc for specifics.
 
 ## Stack & tooling
 
-Python CLI. Key dependencies: `macapptree` (screenshot + AX capture), `mlx-vlm`
-(in-process inference), `imagehash` (dedupe), SQLCipher + AES-256-GCM + Argon2id
-(encrypted store).
+Python CLI managed with [`uv`](https://docs.astral.sh/uv/). `src/` layout; package is
+`norm` with console-script entry point `norm = norm.cli:main`. The version is the single
+source of truth in `src/norm/__init__.py` (`__version__`), read dynamically by hatchling.
 
-Build/test/lint tooling isn't set up yet. When you add it, record the canonical commands
-here so they're one lookup away.
+Key dependencies (added per iteration as needed): `macapptree` (screenshot + AX capture),
+`mlx-vlm` (in-process inference), `imagehash` (dedupe), SQLCipher + AES-256-GCM + Argon2id
+(encrypted store). The CLI skeleton itself has no runtime deps (stdlib `argparse`).
+
+Canonical commands:
+
+- `uv sync` — create/refresh the venv and install the project (editable) + dev deps.
+- `uv run pytest` — run the test suite (narrow with `uv run pytest tests/test_x.py::name`).
+- `uv run norm <args>` / `uv run python -m norm <args>` — run the CLI.
+
+Acceptance tests are black-box: they invoke `python -m norm` as a subprocess and assert on
+stdout/stderr/exit code (see `tests/test_global.py`).

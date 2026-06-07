@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "norm"
+description = "Local, encrypted screen + AX recorder with in-process Gemma-4 (mlx-vlm) reporting."
+readme = "CLAUDE.md"
+requires-python = ">=3.11"
+license = "MIT"
+dynamic = ["version"]
+# Runtime deps (macapptree, mlx-vlm, imagehash, SQLCipher, argon2-cffi) are added
+# in the iterations that need them; the CLI skeleton needs only the stdlib.
+dependencies = []
+
+[project.scripts]
+norm = "norm.cli:main"
+
+[tool.hatch.version]
+path = "src/norm/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/norm"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling / environments
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# norm runtime data must never be committed (encrypted store, exports, configs)
+*.norm
+/dump/
+/out/
