@@ -18,6 +18,11 @@ Covered:
 * REQ-PREPROCESS-007 — errors NOT_ENOUGH_CAPTURES when N < window (exit 5).
 * REQ-CONFIG-003   — the effective prompt reaches generate() and is flag-overridable.
 * REQ-CONFIG-004   — the effective model_ref reaches generate() and is flag-overridable.
+* REQ-INTERVAL-001 — aggregates preprocess markdown over the range; stores a row; re-run appends.
+* REQ-INTERVAL-002 — a time range is required (exit 2).
+* REQ-INTERVAL-003 — uncovered range: --strict errors (exit 5); non-interactive default summarizes.
+* REQ-INTERVAL-004 — --auto-preprocess fills the gap without prompting.
+* REQ-INTERVAL-005 — --output writes the markdown plaintext; the encrypted row is still stored.
 """
 
 from __future__ import annotations
@@ -259,11 +264,131 @@ def test_interval_dry_run_previews_without_inference(store, tmp_path):
     assert counts["preprocess"] == 0
 
 
-def test_interval_real_run_is_not_implemented_yet(store, tmp_path):
-    _seeded(store, tmp_path, 4)
-    result = store.run("report", "interval", "--last", "24h")
-    assert result.returncode == 1
-    assert "not implemented" in result.stderr.lower()
+# ── REQ-INTERVAL-002: a time range is required ────────────────────────────────
+
+
+def test_interval_requires_time_range(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    result = store.run("report", "interval")
+    assert result.returncode == 2, result.stderr
+    assert "--from" in result.stderr or "--last" in result.stderr
+
+
+def test_interval_missing_range_is_usage_error_before_store_access(store):
+    # A missing range is a usage error (exit 2) even before the store is opened,
+    # so it outranks NOT_INITIALIZED (exit 5) in the precedence.
+    result = store.run("report", "interval")
+    assert result.returncode == 2, result.stderr
+
+
+# ── REQ-INTERVAL-001: aggregate preprocess markdown over the range ─────────────
+
+
+def _preprocess_all(store, tmp_path):
+    """Preprocess the seeded captures so the interval range is fully covered."""
+    result = store.run("report", "preprocess", extra_env=_fake_model_env(tmp_path / "pre.jsonl"))
+    assert result.returncode == 0, result.stderr
+    return result
+
+
+def test_interval_aggregates_preprocess_and_stores_row(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    _preprocess_all(store, tmp_path)
+    assert _counts(store)["preprocess"] == 1
+
+    trace = tmp_path / "iv.jsonl"
+    result = store.run("report", "interval", "--last", "24h", extra_env=_fake_model_env(trace))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip()  # aggregated markdown emitted to stdout by default
+    assert _counts(store)["interval_reports"] == 1  # one encrypted row persisted
+
+    records = _trace(trace)
+    assert len(records) == 1  # exactly one aggregation call
+    rec = records[0]
+    assert rec["n_summaries"] == 1  # the one preprocess summary reached generate()
+    assert rec["n_images"] == 0  # aggregates summaries, NOT raw captures
+    assert rec["prompt"] == INTERVAL_PROMPT  # prompt_interval, not prompt_preprocess
+    assert rec["model_ref"] == DEFAULT_MODEL
+
+
+def test_interval_rerun_appends_a_new_row(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    _preprocess_all(store, tmp_path)
+    env = _fake_model_env(tmp_path / "iv.jsonl")
+    store.run("report", "interval", "--last", "24h", extra_env=env)
+    store.run("report", "interval", "--last", "24h", extra_env=env)
+    assert _counts(store)["interval_reports"] == 2  # every run is stored
+
+
+def test_interval_markdown_not_written_in_plaintext(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    _preprocess_all(store, tmp_path)
+    store.run("report", "interval", "--last", "24h", extra_env=_fake_model_env(tmp_path / "iv.jsonl"))
+    for blob in (store.data_dir / "blobs").glob("*.blob"):
+        assert b"Interval report" not in blob.read_bytes()  # REQ-SEC-001
+
+
+# ── REQ-INTERVAL-003: uncovered range — strict / non-interactive default ───────
+
+
+def test_interval_strict_errors_when_uncovered(store, tmp_path):
+    _seeded(store, tmp_path, 6)  # captures exist but were never preprocessed
+    result = store.run("--json", "report", "interval", "--last", "24h", "--strict")
+    assert result.returncode == 5, result.stderr
+    env = json.loads(result.stdout)["error"]
+    assert env["code"] == "COVERAGE_MISSING"
+    assert env["exit"] == 5
+    counts = _counts(store)
+    assert counts["interval_reports"] == 0  # no row stored
+    assert counts["preprocess"] == 0  # --strict did no work
+
+
+def test_interval_noninteractive_default_summarizes_then_reports(store, tmp_path):
+    _seeded(store, tmp_path, 6)  # not preprocessed
+    trace = tmp_path / "iv.jsonl"
+    # stdin is closed (DEVNULL) → non-interactive → default action: summarize, then report.
+    result = store.run("report", "interval", "--last", "24h", extra_env=_fake_model_env(trace))
+    assert result.returncode == 0, result.stderr
+    counts = _counts(store)
+    assert counts["preprocess"] == 1  # the missing window was summarized first
+    assert counts["interval_reports"] == 1
+    records = _trace(trace)
+    assert any(r["n_images"] > 0 for r in records)  # window summarized from images
+    assert any(r["n_summaries"] > 0 for r in records)  # then aggregated from summaries
+
+
+# ── REQ-INTERVAL-004: --auto-preprocess fills the gap without prompting ────────
+
+
+def test_interval_auto_preprocess_fills_gap(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    result = store.run(
+        "report", "interval", "--last", "24h", "--auto-preprocess",
+        extra_env=_fake_model_env(tmp_path / "iv.jsonl"),
+    )
+    assert result.returncode == 0, result.stderr
+    counts = _counts(store)
+    assert counts["preprocess"] == 1
+    assert counts["interval_reports"] == 1
+
+
+# ── REQ-INTERVAL-005: --output writes plaintext; row still stored ─────────────
+
+
+def test_interval_output_writes_file_and_stores_row(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    _preprocess_all(store, tmp_path)
+    out = tmp_path / "week.md"
+    result = store.run(
+        "report", "interval", "--last", "7d", "--output", str(out),
+        extra_env=_fake_model_env(tmp_path / "iv.jsonl"),
+    )
+    assert result.returncode == 0, result.stderr
+    assert out.exists()
+    body = out.read_text()
+    assert body.strip()  # aggregated markdown written to the file (plaintext)
+    assert body not in result.stdout  # not also dumped to stdout
+    assert _counts(store)["interval_reports"] == 1  # encrypted row still persisted
 
 
 # ── store-access contract for report (REQ-GLOBAL-007) ─────────────────────────
@@ -278,4 +403,17 @@ def test_preprocess_uninitialized_exits_5(store):
 def test_preprocess_locked_exits_3(store, tmp_path):
     _seeded(store, tmp_path, 4)
     result = store.run("report", "preprocess", passphrase=None)
+    assert result.returncode == 3, result.stderr
+
+
+def test_interval_uninitialized_exits_5(store):
+    result = store.run("report", "interval", "--last", "24h")
+    assert result.returncode == 5, result.stderr
+    assert "init" in result.stderr.lower()
+
+
+def test_interval_locked_exits_3(store, tmp_path):
+    _seeded(store, tmp_path, 6)
+    _preprocess_all(store, tmp_path)
+    result = store.run("report", "interval", "--last", "24h", passphrase=None)
     assert result.returncode == 3, result.stderr

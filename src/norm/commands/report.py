@@ -4,12 +4,14 @@
 for each window not already summarized, runs the in-process model over the window's
 images + AX text and stores the markdown encrypted (PREPROCESS-001..007, concept
 §10.8–10.9). ``report interval`` aggregates those window summaries over a time range
-(concept §10.10–10.12); its full run lands in a later iteration, but ``--dry-run`` is
-available now.
+into one stored interval report (INTERVAL-001..005, concept §10.10–10.12): it requires
+a range, and when the range is not fully covered it either fills the gap (the default
+for a non-interactive run, ``--auto-preprocess``, or an interactive yes) or fails with
+COVERAGE_MISSING (``--strict`` or a declined prompt).
 
 ``--dry-run`` previews the planned work — window count, capture ids, model_ref, and the
-effective prompt that *would* reach ``generate()`` — while loading no model and writing
-no rows (REPORT-002). With no subcommand, ``report`` prints usage and exits 2
+effective prompt that *would* reach the model — while loading no model and writing no
+rows (REPORT-002). With no subcommand, ``report`` prints usage and exits 2
 (REPORT-001).
 
 Inference is reached only through :mod:`norm.inference` (with the ``NORM_FAKE_MODEL``
@@ -21,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
@@ -58,6 +61,12 @@ def configure(parser: argparse.ArgumentParser) -> None:
     _add_global_flags(iv)
     _add_model_flags(iv, prompt_key="prompt_interval")
     _add_range_flags(iv)
+    iv.add_argument("--auto-preprocess", dest="auto_preprocess", action="store_true",
+                    help="Summarize any uncovered windows first, without prompting.")
+    iv.add_argument("--strict", action="store_true",
+                    help="Fail instead of summarizing when the range is not fully covered.")
+    iv.add_argument("--output", dest="output", metavar="PATH",
+                    help="Write the aggregated markdown to PATH (plaintext) instead of stdout.")
     iv.add_argument("--dry-run", action="store_true",
                     help="Preview the planned work; load no model and write no rows.")
     iv.set_defaults(func=run_interval)
@@ -111,19 +120,39 @@ def run_preprocess(args: argparse.Namespace) -> int:
 
 
 def _run_preprocess_windows(args, settings, con, key, windows) -> int:
-    todo = windows if args.force else [
-        w for w in windows
-        if store_mod.preprocess_by_capture_ids(con, report_mod.canonical_ids(w.capture_ids)) is None
-    ]
+    todo = windows if args.force else _uncovered(con, windows)
     if not todo:
         # Every planned window is already summarized: nothing to do, no model loaded
         # (concept §10.9 idempotent re-run).
         print("0 new windows")
         return int(errors.ExitCode.SUCCESS)
 
-    blobs_dir = settings.paths.data_dir / session.BLOBS_DIR
     model = inference.load_model(settings.model_ref)
-    for w in todo:
+    _summarize_windows(settings, con, key, todo, model)
+    store_mod.flush_index(con, settings.paths.index_file, key)
+    print(f"{len(todo)} window(s) summarized")
+    return int(errors.ExitCode.SUCCESS)
+
+
+def _uncovered(con, windows):
+    """The planned ``windows`` that have no preprocess row yet (the work to do)."""
+    return [
+        w for w in windows
+        if store_mod.preprocess_by_capture_ids(con, report_mod.canonical_ids(w.capture_ids)) is None
+    ]
+
+
+def _summarize_windows(settings, con, key, windows, model) -> None:
+    """Run the model over each window and store its markdown summary.
+
+    Shared by ``report preprocess`` and ``report interval``'s gap-fill: the caller
+    supplies the loaded ``model`` (reused across windows) and the ``settings`` whose
+    ``prompt_text`` selects the prompt — ``prompt_preprocess`` in both cases, since a
+    window summary is always a preprocess unit (the interval prompt is applied only
+    when aggregating). No index flush here; the caller flushes once.
+    """
+    blobs_dir = settings.paths.data_dir / session.BLOBS_DIR
+    for w in windows:
         images, ax_text = _load_window(con, key, blobs_dir, w)
         markdown = inference.generate(
             model, prompt=settings.prompt_text, images=images,
@@ -131,9 +160,6 @@ def _run_preprocess_windows(args, settings, con, key, windows) -> int:
         )
         markdown_ref = blobs.write_blob(blobs_dir, key, markdown.encode("utf-8"))
         _store_window(con, blobs_dir, w, settings, markdown_ref)
-    store_mod.flush_index(con, settings.paths.index_file, key)
-    print(f"{len(todo)} window(s) summarized")
-    return int(errors.ExitCode.SUCCESS)
 
 
 def _load_window(con, key, blobs_dir, window):
@@ -174,41 +200,146 @@ def _store_window(con, blobs_dir, window, settings, markdown_ref: str) -> None:
 
 
 def run_interval(args: argparse.Namespace) -> int:
-    if not args.dry_run:
-        # The full aggregation run (INTERVAL-001..005) lands in a later iteration.
-        print("norm report interval: not implemented yet (use --dry-run to preview)",
-              file=sys.stderr)
-        return int(errors.ExitCode.RUNTIME_ERROR)
-
     settings = _Settings(args)
     window_k, stride_j = _window_stride(settings, None, None)
+    # A missing range is a usage error (exit 2) raised before the store is opened, so
+    # it outranks NOT_INITIALIZED/STORE_LOCKED in the precedence (INTERVAL-002).
     window = timerange.parse_range(frm=args.frm, to=args.to, last=args.last, require_range=True)
 
     con, key = _open_store_keyed(settings.paths)
     try:
         windows = _plan(con, window, window_k, stride_j)
-        covered = sum(
-            1 for w in windows
-            if store_mod.preprocess_by_capture_ids(con, report_mod.canonical_ids(w.capture_ids))
-        )
-        _emit_plan(args, "interval", settings, windows, covered=covered)
-        return int(errors.ExitCode.SUCCESS)
+        missing = _uncovered(con, windows)
+        if args.dry_run:
+            _emit_plan(args, "interval", settings, windows, covered=len(windows) - len(missing))
+            return int(errors.ExitCode.SUCCESS)
+        return _run_interval(args, settings, con, key, window, windows, missing)
     finally:
         con.close()
         crypto.scrub(key)
+
+
+def _run_interval(args, settings, con, key, window, windows, missing) -> int:
+    """Aggregate the windows' preprocess summaries into one stored interval report.
+
+    When some windows are uncovered, :func:`_resolve_gap` decides whether to fill the
+    gap (default / ``--auto-preprocess`` / interactive yes) or fail (``--strict`` /
+    declined) — that decision runs *before* the model is loaded so COVERAGE_MISSING
+    (exit 5) outranks any MODEL_ERROR (concept §10.10).
+    """
+    model = None
+    if missing:
+        _resolve_gap(args, len(missing))
+        model = inference.load_model(settings.model_ref)
+        _summarize_windows(_Settings(args, prompt_key="prompt_preprocess"), con, key, missing, model)
+
+    source_rows = [
+        store_mod.preprocess_by_capture_ids(con, report_mod.canonical_ids(w.capture_ids))
+        for w in windows
+    ]
+    blobs_dir = settings.paths.data_dir / session.BLOBS_DIR
+    summaries = [blobs.read_blob(blobs_dir, key, r["markdown_ref"]).decode("utf-8") for r in source_rows]
+
+    if model is None:
+        model = inference.load_model(settings.model_ref)
+    aggregated = inference.aggregate(
+        model, prompt=settings.prompt_text, summaries=summaries, max_tokens=settings.max_tokens,
+    )
+
+    markdown_ref = blobs.write_blob(blobs_dir, key, aggregated.encode("utf-8"))
+    report_id = store_mod.insert_interval_report(
+        con,
+        generated_at=datetime.now().isoformat(timespec="seconds"),
+        range_from=_range_bound(window.start, windows[0].start),
+        range_to=_range_bound(window.end, windows[-1].end),
+        model=settings.model_ref,
+        prompt_id=settings.prompt_id,
+        prompt_text=settings.prompt_text,
+        source_preprocess_ids=report_mod.canonical_ids([r["id"] for r in source_rows]),
+        markdown_ref=markdown_ref,
+    )
+    store_mod.flush_index(con, settings.paths.index_file, key)
+    _emit_interval(args, aggregated, report_id, source_rows)
+    return int(errors.ExitCode.SUCCESS)
+
+
+def _resolve_gap(args, missing_count: int) -> None:
+    """Decide how to handle uncovered windows; return to summarize, or raise to abort.
+
+    Order (concept §10.10): ``--strict`` always aborts with COVERAGE_MISSING (exit 5);
+    ``--auto-preprocess`` and any non-interactive run (no TTY, or ``--json``) take the
+    default and summarize; an interactive run prompts, defaulting to yes. Declining the
+    prompt aborts rather than emit a misleading partial report (INTERVAL-003).
+    """
+    if args.strict:
+        raise errors.coverage_missing(
+            "range not fully summarized; run `norm report preprocess` or drop --strict"
+        )
+    if args.auto_preprocess or not _interactive(args):
+        return  # default action for a non-interactive run (REQ-GLOBAL-010)
+    print(f"range not fully summarized ({missing_count} window(s)); summarize now? [Y/n] ",
+          end="", file=sys.stderr, flush=True)
+    if sys.stdin.readline().strip().lower() in ("", "y", "yes"):
+        return
+    raise errors.coverage_missing("range not fully summarized; declined to summarize")
+
+
+def _interactive(args) -> bool:
+    """True when norm may prompt: a real TTY on stdin and not machine-readable ``--json``."""
+    return sys.stdin.isatty() and not getattr(args, "json", False)
+
+
+def _range_bound(requested, fallback: str) -> str:
+    """The stored range bound: the requested instant if any, else the data's own edge.
+
+    ``--to now`` (or ``--from`` alone) can leave one end of the requested range open;
+    the row's ``range_from``/``range_to`` are NOT NULL, so an open end falls back to the
+    first/last aggregated window's timestamp.
+    """
+    return timerange.to_db_ts(requested) if requested is not None else fallback
+
+
+def _emit_interval(args, aggregated: str, report_id: int, source_rows: list[dict]) -> None:
+    """Emit the aggregated markdown: to ``--output`` (plaintext file), JSON, or stdout.
+
+    With ``--output`` the markdown is written to the user-requested file and stdout
+    carries only the path (INTERVAL-005); the encrypted row is stored either way.
+    """
+    source_ids = [r["id"] for r in source_rows]
+    if args.output:
+        Path(args.output).write_text(aggregated, encoding="utf-8")
+        if getattr(args, "json", False):
+            print(json.dumps({"report_id": report_id, "output": args.output,
+                              "source_preprocess_ids": source_ids}))
+        else:
+            print(args.output)
+        return
+    if getattr(args, "json", False):
+        print(json.dumps({"report_id": report_id, "markdown": aggregated,
+                          "source_preprocess_ids": source_ids}))
+        return
+    sys.stdout.write(aggregated)
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
 
 class _Settings:
-    """Effective per-run settings: resolved paths, config, and model/prompt selection."""
+    """Effective per-run settings: resolved paths, config, and model/prompt selection.
 
-    def __init__(self, args: argparse.Namespace):
+    ``prompt_key`` defaults to the subcommand's own prompt (``args.prompt_key``); the
+    interval gap-fill passes ``prompt_preprocess`` to summarize windows with the
+    preprocess prompt. The ``--prompt`` override only applies to the command's primary
+    prompt, never to the secondary gap-fill one.
+    """
+
+    def __init__(self, args: argparse.Namespace, *, prompt_key: str | None = None):
         self.paths = session.resolve_paths(args)
         self._cfg = session.load_config(self.paths)
         self.model_ref = str(self.value("model", args.model))
-        self.prompt_text = str(self.value(args.prompt_key, args.prompt))
+        key = prompt_key or args.prompt_key
+        prompt_flag = args.prompt if key == args.prompt_key else None
+        self.prompt_text = str(self.value(key, prompt_flag))
         self.prompt_id = inference.prompt_id(self.prompt_text)
         self.max_tokens = int(self.value("max_tokens", args.max_tokens))
 

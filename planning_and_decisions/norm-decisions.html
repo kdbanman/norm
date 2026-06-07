@@ -278,6 +278,60 @@
     </div>
   </section>
 
+  <section id="adr-008">
+    <h2>ADR-008 — <code>report interval</code>: one planned-window set drives both coverage and aggregation; two prompts; declining the gap prompt aborts</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-INTERVAL-001</span>
+      <span class="req">REQ-INTERVAL-003</span>
+      <span class="req">REQ-INTERVAL-004</span>
+      <span class="req">REQ-GLOBAL-010</span>
+      · concept §10.10–10.12
+    </p>
+
+    <p><strong>Context.</strong> <code>interval</code> must answer two questions over a
+    range: <em>is it fully summarized?</em> (to decide gap handling) and <em>which
+    preprocess summaries do we aggregate?</em> A stored-row range query
+    (<code>list_preprocess(from,to)</code>, added speculatively in
+    <code>b5cf0a2</code>) answers only the second, and the two answers can diverge — a
+    preprocess row left over from a different <code>--stride</code> would be aggregated
+    though it isn't part of the current window plan. Aggregation also needs a different
+    prompt from the windows it may have to compute: a window summary is always a
+    <em>preprocess</em> unit (<code>prompt_preprocess</code>), while the report itself
+    uses <code>prompt_interval</code>.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> Both questions are answered from the same
+      <code>plan_windows(captures, window_k, stride_j)</code> set: a window is "covered"
+      iff <code>preprocess_by_capture_ids</code> finds its row, and the aggregation source
+      is exactly those rows, in window order. So coverage and source can't disagree, and
+      the unused <code>list_preprocess</code> was deleted (YAGNI; trivially restorable if a
+      future inspector needs it). The gap-fill summarizes missing windows with a second
+      <code>_Settings(prompt_key="prompt_preprocess")</code> while the command's
+      <code>--prompt</code> overrides only the primary (<code>prompt_interval</code>) prompt;
+      the model is loaded once and reused for both passes. Gap policy:
+      <code>--strict</code> always aborts with <code>COVERAGE_MISSING</code> (exit&nbsp;5)
+      <em>before</em> any model load (so it outranks a MODEL_ERROR); otherwise
+      <code>--auto-preprocess</code> or a non-interactive run (no TTY, <em>or</em>
+      <code>--json</code>) takes the default and summarizes (REQ-GLOBAL-010); an interactive
+      run prompts, defaulting to yes. A declined prompt aborts with the same
+      <code>COVERAGE_MISSING</code> rather than emit a misleading partial report.
+      <code>inference.aggregate()</code> is a text-only sibling of <code>generate()</code>
+      (no images); the <code>NORM_FAKE_MODEL</code> trace gained <code>n_summaries</code> so
+      a test can prove the interval pass consumed preprocess markdown, not raw captures.</p>
+      <p class="rationale">Sharing one window set is the cheap invariant that keeps the
+      dry-run preview, the coverage decision, and the stored
+      <code>source_preprocess_ids</code> mutually consistent. The interactive prompt can't
+      be reached by the black-box subprocess suite (its stdin is closed, so never a TTY),
+      so the policy lives in a small pure <code>_resolve_gap</code> unit-tested directly
+      (<code>tests/test_interval_gap.py</code>); the non-interactive branches are also
+      asserted black-box. <em>Trade-off:</em> coverage/aggregation track the
+      <code>window_k</code>/<code>stride_j</code> in effect at <code>interval</code> time, so
+      preprocess rows made under a different stride are ignored rather than half-counted —
+      the honest, predictable behaviour for a config the user controls.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

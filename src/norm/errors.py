@@ -62,6 +62,10 @@ def not_enough_captures(message: str) -> NormError:
     return NormError("NOT_ENOUGH_CAPTURES", ExitCode.NOT_FOUND, message)
 
 
+def coverage_missing(message: str) -> NormError:
+    return NormError("COVERAGE_MISSING", ExitCode.NOT_FOUND, message)
+
+
 def model_unavailable(message: str) -> NormError:
     return NormError("MODEL_UNAVAILABLE", ExitCode.MODEL_ERROR, message)
 

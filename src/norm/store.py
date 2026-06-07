@@ -217,12 +217,6 @@ def extend_duration(con: sqlite3.Connection, capture_id: int, add_seconds: int) 
 
 # ── preprocess summaries (report) ────────────────────────────────────────────────
 
-# Provenance + content columns surfaced when reading preprocess rows back. Order
-# matches the dict keys callers expect; capture_ids is the canonical-JSON identity.
-_PREPROCESS_COLUMNS = (
-    "id", "window_start", "window_end", "capture_ids", "model", "prompt_id", "markdown_ref",
-)
-
 
 def insert_preprocess(
     con: sqlite3.Connection,
@@ -286,26 +280,37 @@ def preprocess_by_capture_ids(con: sqlite3.Connection, capture_ids: str) -> dict
     return {"id": row[0], "markdown_ref": row[1]} if row else None
 
 
-def list_preprocess(
-    con: sqlite3.Connection, start: str | None = None, end: str | None = None
-) -> list[dict]:
-    """Preprocess rows whose window falls within ``[start, end]``, ordered by ``window_start``.
+# ── interval reports (report interval) ───────────────────────────────────────────
 
-    Both bounds are inclusive over the window's own ``window_start``/``window_end`` so a
-    row counts only when the whole window lies in range (the unit ``interval`` aggregates).
+
+def insert_interval_report(
+    con: sqlite3.Connection,
+    *,
+    generated_at: str,
+    range_from: str,
+    range_to: str,
+    model: str,
+    prompt_id: str,
+    prompt_text: str,
+    source_preprocess_ids: str,
+    markdown_ref: str,
+) -> int:
+    """Append one interval-report row and return its id (INTERVAL-001).
+
+    Interval reports are never deduped: every run is recorded, so this always
+    inserts a new row. ``source_preprocess_ids`` is the canonical-JSON list of the
+    preprocess rows aggregated (see :func:`norm.report.canonical_ids`);
+    ``markdown_ref`` points at the encrypted aggregated-markdown blob.
     """
-    sql = f"SELECT {', '.join(_PREPROCESS_COLUMNS)} FROM preprocess"
-    clauses, params = [], []
-    if start is not None:
-        clauses.append("window_start >= ?")
-        params.append(start)
-    if end is not None:
-        clauses.append("window_end <= ?")
-        params.append(end)
-    if clauses:
-        sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY window_start, id"
-    return [dict(zip(_PREPROCESS_COLUMNS, row)) for row in con.execute(sql, params)]
+    cur = con.execute(
+        "INSERT INTO interval_report "
+        "(generated_at, range_from, range_to, model, prompt_id, prompt_text, "
+        " source_preprocess_ids, markdown_ref) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (generated_at, range_from, range_to, model, prompt_id, prompt_text,
+         source_preprocess_ids, markdown_ref),
+    )
+    return int(cur.lastrowid)
 
 
 def get_meta(con: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
