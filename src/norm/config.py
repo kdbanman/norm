@@ -74,6 +74,31 @@ def write_config(config_file: Path, values: dict) -> None:
     Path(config_file).write_text(tomli_w.dumps(ordered))
 
 
+def coerce_value(key: str, raw: str) -> object:
+    """Coerce a CLI string to the type of ``key``'s default (TOML keeps types).
+
+    The default's Python type is the schema: ``interval_minutes`` (int) stores an
+    int, not ``"10"``, so ``config get`` round-trips faithfully. Raises ``ValueError``
+    on a mistyped value; the caller maps that to a usage error. ``key`` is assumed
+    valid (callers check :data:`CONFIG_KEYS` first).
+    """
+    target = type(DEFAULTS[key])
+    # bool before int: bool is an int subclass, but only exact-bool defaults parse here.
+    if target is bool:
+        lowered = raw.strip().lower()
+        if lowered in ("true", "1", "yes", "on"):
+            return True
+        if lowered in ("false", "0", "no", "off"):
+            return False
+        raise ValueError(f"{key} expects a boolean, got {raw!r}")
+    if target is int:
+        try:
+            return int(raw)
+        except ValueError:
+            raise ValueError(f"{key} expects an integer, got {raw!r}") from None
+    return raw
+
+
 def effective_value(key: str, flag_value: object, config: dict | None) -> object:
     """Resolve one config key by precedence: CLI flag > config file > built-in default.
 

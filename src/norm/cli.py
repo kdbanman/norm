@@ -11,6 +11,7 @@ import argparse
 import sys
 
 from norm import __version__
+from norm.commands import config as config_cmd
 from norm.commands import init as init_cmd
 from norm.commands import list_cmd
 from norm.commands import record as record_cmd
@@ -96,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     status_cmd.configure(parsers["status"])
     list_cmd.configure(parsers["list"])
     show_cmd.configure(parsers["show"])
+    config_cmd.configure(parsers["config"])
 
     return parser
 

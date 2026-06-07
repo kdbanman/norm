@@ -232,3 +232,28 @@ def test_record_once_not_initialized(store, tmp_path):
     assert result.returncode == 5
     assert "init" in result.stderr.lower()
     assert _blobs(store) == []
+
+
+# ── REQ-GLOBAL-005: CLI flag > config file > default ─────────────────────────────
+
+
+def test_config_interval_overrides_default_when_no_flag(store, tmp_path):
+    """A config value is used over the built-in default when no flag is given."""
+    store.init()  # default interval_minutes == 5 (⇒ 300s)
+    assert store.run("config", "set", "interval_minutes", "9").returncode == 0
+    frame = _make_frame(tmp_path / "f", image=_gradient(), ax=_BASE_AX)
+
+    result = store.run("record", "--once", extra_env=_capture_env(frame))
+    assert result.returncode == 0, result.stderr
+    assert _captures(store)[0]["duration_s"] == 540  # 9 * 60 from config, not 300
+
+
+def test_record_interval_flag_overrides_config_file(store, tmp_path):
+    """REQ-GLOBAL-005: ``--interval 1`` wins over a config interval_minutes of 9."""
+    store.init()
+    assert store.run("config", "set", "interval_minutes", "9").returncode == 0
+    frame = _make_frame(tmp_path / "f", image=_gradient(), ax=_BASE_AX)
+
+    result = store.run("record", "--once", "--interval", "1", extra_env=_capture_env(frame))
+    assert result.returncode == 0, result.stderr
+    assert _captures(store)[0]["duration_s"] == 60  # CLI 1 min, not config's 9 (540)
