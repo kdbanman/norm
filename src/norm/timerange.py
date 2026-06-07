@@ -134,6 +134,19 @@ def parse_range(
     return TimeRange(start, end)
 
 
+def parse_instant(text: str, now: datetime | None = None) -> datetime:
+    """Resolve a single instant — ``prune``'s ``--before`` cutoff (REQ-DATA-006).
+
+    Accepts the same forms as a ``--from``/``--to`` value (ISO-8601, relative offset
+    like ``-30d``, ``now``); a calendar day word resolves to the *start* of that day,
+    so ``--before yesterday`` cuts at yesterday's midnight. A bad value is a usage
+    error (exit 2), matching :func:`parse_range`.
+    """
+    now = now or datetime.now().astimezone()
+    instant, _ = _parse_instant(text, now)
+    return instant
+
+
 def to_db_ts(instant: datetime) -> str:
     """Render a range bound as a local-naive ISO string for index queries.
 

@@ -182,7 +182,7 @@ def _store_window(con, blobs_dir, window, settings, markdown_ref: str) -> None:
     ids = report_mod.canonical_ids(window.capture_ids)
     existing = store_mod.preprocess_by_capture_ids(con, ids)
     if existing is not None:
-        _unlink_blob(blobs_dir, existing["markdown_ref"])  # drop the stale markdown blob
+        blobs.delete_blob(blobs_dir, existing["markdown_ref"])  # drop the stale markdown blob
         store_mod.update_preprocess(
             con, existing["id"], window_start=window.start, window_end=window.end,
             model=settings.model_ref, prompt_id=settings.prompt_id,
@@ -410,10 +410,3 @@ def _emit_plan(args, kind, settings: _Settings, windows, *, covered: int | None 
         print(f"covered  {covered} of {len(windows)} already summarized")
     for i, w in enumerate(windows, 1):
         print(f"  window {i}  captures {','.join(str(c) for c in w.capture_ids)}")
-
-
-def _unlink_blob(blobs_dir, ref: str) -> None:
-    try:
-        (Path(blobs_dir) / ref).unlink()
-    except OSError:
-        pass

@@ -332,6 +332,52 @@
     </div>
   </section>
 
+  <section id="adr-009">
+    <h2>ADR-009 — <code>export</code>/<code>prune</code>: one half-open range seam keyed per type; export's report predicate mirrors prune's</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-DATA-005</span>
+      <span class="req">REQ-DATA-006</span>
+      · concept §10.15–10.16
+    </p>
+
+    <p><strong>Context.</strong> Both commands select rows by time over the three
+    artifact tables, but the spec pins the predicate for only one of them: §10.16 says
+    <code>prune</code> matches captures on <code>ts&lt;cutoff</code>, preprocess on
+    <code>window_end&lt;cutoff</code>, and interval reports on <code>range_to&lt;cutoff</code>;
+    §10.15 says only that <code>export</code> writes "data in range", naming no column.
+    A summary/report has two natural time anchors (its window's start or end / its
+    range's from or to), so "in range" is ambiguous for the report tables.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> One half-open <code>[start, end)</code> range
+      selector, keyed on the per-table column prune already dictates —
+      <code>capture.ts</code>, <code>preprocess.window_end</code>,
+      <code>interval_report.range_to</code> — backs <em>both</em> commands
+      (<code>store._rows_in_range</code> + the three typed wrappers). <code>prune</code>
+      passes <code>(None, cutoff)</code> so <code>&lt; cutoff</code> falls out as the same
+      half-open form; <code>export</code> passes the parsed window. Export's report
+      predicate therefore mirrors prune's (a summary belongs to a range by where it
+      <em>ends</em>), so the two commands agree on which reports a range contains. The
+      <code>--include</code> vocabulary (<code>images,ax,reports</code>; default all,
+      <code>reports</code> = both summary kinds) is shared in <code>norm.artifacts</code>;
+      <code>prune</code> restricts it to <code>reports</code>. <code>prune</code> removes
+      index rows and flushes the encrypted index <em>before</em> unlinking any blob, so an
+      interrupted run leaves at most a harmless orphan file — never a persisted row
+      pointing at a missing blob (the inverse the contract forbids). Blob unlinking moved
+      to <code>blobs.delete_blob</code>, shared with the <code>--force</code> preprocess
+      overwrite.</p>
+      <p class="rationale">Keying export and prune the same way means a
+      <code>norm export --from X --to Y</code> followed by <code>norm prune --before Y</code>
+      act on a consistent notion of "the reports in this range", and the row-selection math
+      is unit-coverable in one place. <em>Trade-off:</em> a window straddling a bound is
+      placed by its end alone, so an export range can omit a summary whose window opened
+      before <code>--from</code> but closed inside it — acceptable, since a window's
+      identity and stored bounds already treat its end as canonical, and prune relies on
+      the same edge.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

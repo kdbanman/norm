@@ -313,6 +313,69 @@ def insert_interval_report(
     return int(cur.lastrowid)
 
 
+# ── range selection + deletion (export / prune) ──────────────────────────────
+#
+# Each artifact type is range-filtered on its own time column: captures by capture
+# time (``ts``), preprocess by ``window_end``, interval reports by ``range_to``
+# (concept §10.15/§10.16). ``export`` passes a half-open ``[start, end)`` window;
+# ``prune`` passes ``(None, cutoff)`` so the "< cutoff" predicate falls out as the
+# same half-open form.
+
+
+def _rows_in_range(
+    con: sqlite3.Connection,
+    table: str,
+    ts_col: str,
+    columns: tuple[str, ...],
+    start: str | None,
+    end: str | None,
+) -> list[dict]:
+    """Rows of ``table`` whose ``ts_col`` is in ``[start, end)``, ordered by it.
+
+    ``table``/``ts_col``/``columns`` are module-internal constants (never user
+    input), so interpolating them into the statement is safe.
+    """
+    sql = f"SELECT {', '.join(columns)} FROM {table}"
+    clauses, params = [], []
+    if start is not None:
+        clauses.append(f"{ts_col} >= ?")
+        params.append(start)
+    if end is not None:
+        clauses.append(f"{ts_col} < ?")
+        params.append(end)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += f" ORDER BY {ts_col}, id"
+    return [dict(zip(columns, row)) for row in con.execute(sql, params)]
+
+
+def captures_in_range(con: sqlite3.Connection, start: str | None, end: str | None) -> list[dict]:
+    """Capture id + image/AX blob refs for captures with ``ts`` in ``[start, end)``."""
+    return _rows_in_range(con, "capture", "ts", ("id", "image_ref", "ax_ref"), start, end)
+
+
+def preprocess_in_range(con: sqlite3.Connection, start: str | None, end: str | None) -> list[dict]:
+    """Preprocess id + markdown ref for windows whose ``window_end`` is in ``[start, end)``."""
+    return _rows_in_range(con, "preprocess", "window_end", ("id", "markdown_ref"), start, end)
+
+
+def interval_reports_in_range(con: sqlite3.Connection, start: str | None, end: str | None) -> list[dict]:
+    """Interval-report id + markdown ref for reports whose ``range_to`` is in ``[start, end)``."""
+    return _rows_in_range(con, "interval_report", "range_to", ("id", "markdown_ref"), start, end)
+
+
+def delete_by_ids(con: sqlite3.Connection, table: str, ids: list[int]) -> int:
+    """Delete rows of ``table`` by primary-key id; return the number removed.
+
+    ``table`` is a module-internal constant; ids are bound parameters.
+    """
+    if not ids:
+        return 0
+    placeholders = ",".join("?" * len(ids))
+    cur = con.execute(f"DELETE FROM {table} WHERE id IN ({placeholders})", list(ids))
+    return cur.rowcount
+
+
 def get_meta(con: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
     """Read a value from the ``meta`` key/value table (e.g. buffered idle)."""
     row = con.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()

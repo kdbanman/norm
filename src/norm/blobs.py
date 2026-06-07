@@ -31,3 +31,16 @@ def write_blob(blobs_dir: Path, data_key: bytes, plaintext: bytes) -> str:
 def read_blob(blobs_dir: Path, data_key: bytes, ref: str) -> bytes:
     """Decrypt and return the plaintext of blob ``ref`` under ``blobs_dir``."""
     return crypto.aesgcm_decrypt(data_key, (Path(blobs_dir) / ref).read_bytes())
+
+
+def delete_blob(blobs_dir: Path, ref: str) -> None:
+    """Best-effort remove blob ``ref``; a missing file is not an error.
+
+    Used by ``prune`` (capture image/AX + report markdown blobs) and the ``--force``
+    preprocess overwrite (dropping a stale markdown blob). A blob ref belongs to a
+    single row, so deleting it never affects another (concept §7).
+    """
+    try:
+        (Path(blobs_dir) / ref).unlink()
+    except OSError:
+        pass
