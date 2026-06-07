@@ -33,3 +33,7 @@ dev = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so tests can import the dev-tooling package
+# (tools.normdev), whose harness backs the `store` fixture. tools/ is not part
+# of the installed wheel; this makes it importable for the suite only.
+pythonpath = ["."]

@@ -93,3 +93,19 @@ Canonical commands:
 
 Acceptance tests are black-box: they invoke `python -m norm` as a subprocess and assert on
 stdout/stderr/exit code (see `tests/test_global.py`).
+
+### Developer tooling (`tools/normdev`)
+
+The recurring TDD-loop chores live in a dev-only CLI (`tools/`, **not** shipped in the
+wheel and **never** a `norm` subcommand — the product CLI surface is contractual,
+REQ-GLOBAL-002). Its store driver also backs the pytest `store` fixture, so a manual
+smoke run takes the exact same path as the acceptance tests. `make` wraps the common
+cases; call the module directly for arg-taking forms:
+
+- `make smoke` (`uv run python -m tools.normdev smoke [--keep]`) — stand up a throwaway
+  encrypted store, drive `init`/`record`/`status`/`list` end-to-end through the capture
+  seams, check the contract, and tear it down. Replaces ad-hoc `rm -rf /tmp/normsmoke; …`.
+- `make req` / `make req-todo` (`uv run python -m tools.normdev req list [--outstanding]`)
+  — list requirements (`✓` = referenced by a test) or just the ones no test covers yet.
+- `uv run python -m tools.normdev req show REQ-XXX-NNN` — full pass/fail criteria for one
+  requirement, plus where it's referenced. Use this to pick the next RED target.

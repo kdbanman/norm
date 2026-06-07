@@ -189,6 +189,47 @@
     </div>
   </section>
 
+  <section id="adr-006">
+    <h2>ADR-006 — Recurring TDD chores live in a dev-only CLI outside the product, not as <code>norm</code> subcommands</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-GLOBAL-002</span>
+      · conventions (verification.seam_note) · dev workflow only (no product req)
+    </p>
+
+    <p><strong>Context.</strong> The TDD loop kept re-deriving the same shell
+    one-liners every session — a throwaway store for manual smoke runs
+    (<code>rm&nbsp;-rf&nbsp;/tmp/normsmoke; init; record …</code>) and ad-hoc Python to
+    pull a requirement out of <code>norm-requirements.html</code> — which then vanished
+    into scrollback, recorded nowhere. They are real, repeated needs with no durable
+    home. The product CLI surface can't absorb them: <code>norm --help</code> must list
+    exactly the documented commands (REQ-GLOBAL-002), and "test seams are not product
+    features."</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> A developer-only package
+      <code>tools/normdev</code> (run as <code>python -m tools.normdev</code>) exposes
+      <code>smoke</code> and <code>req</code>. It lives outside <code>src/</code> and is
+      excluded from the wheel (<code>[tool.hatch.build.targets.wheel] packages =
+      ["src/norm"]</code>), so it ships nothing and adds no <code>norm</code> subcommand.
+      Its ephemeral-store driver (<code>NormStore</code>) is the single source of truth
+      the pytest <code>store</code> fixture subclasses, so a manual smoke takes the same
+      path as the black-box tests (<code>pythonpath = ["."]</code> lets the suite import
+      it). <code>req</code> reads the doc's embedded <code>const DATA</code> object rather
+      than scraping markup; "outstanding" is derived — a requirement is covered once its
+      id (full <code>REQ-X-NNN</code> or short <code>X-NNN</code>) is referenced by a file
+      under <code>tests/</code>. <code>make</code> wraps the no-arg cases.</p>
+      <p class="rationale">Keeps the product CLI contract intact while giving the chores
+      a place to be implemented, tested, and documented (CLAUDE.md "Developer tooling").
+      Sharing one driver means smoke and the acceptance tests can't drift. Reading the
+      embedded data keeps the requirements doc hand-authored HTML (the source of truth)
+      while making it queryable. <em>Trade-off:</em> coverage is a reference heuristic,
+      not a real traceability matrix — naming a still-outstanding id in a test file would
+      mark it covered; the dev-tooling tests avoid this by only citing already-covered
+      ids. A future traceability test could harden this if it earns its keep.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>
