@@ -20,7 +20,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-SEC-002</span> (login password never read),
@@ -76,9 +76,18 @@
   (transient-decryption FS watch) and <strong>manual/audit</strong> (login-password path, key
   zeroing) acceptance items so the test plan is honest about coverage.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Split into automated vs. audit, scoped to the chosen threat
+    model (other user accounts + same-user-while-idle; <em>not</em> active malware / live memory
+    capture). <strong>Automated:</strong> transient-decryption FS-watch during <code>report</code> — no
+    plaintext PNG/JSON appears under <code>data_dir</code>, <code>$TMPDIR</code>, or <code>/tmp</code>;
+    the <code>NORM_FAKE_MODEL</code> seam holds the call open to snapshot mid-inference
+    (<span class="req">REQ-SEC-006</span>). "Login password never read" is now trivially strong — norm
+    uses no Keychain and touches no login-auth surface — assert no PAM/<code>dscl</code>/login-keychain
+    access (<span class="req">REQ-SEC-002</span>). <strong>Audit-only:</strong> key-zeroing-on-exit
+    (<span class="req">REQ-RECORD-006</span>) stays code-review-only — defending process memory against
+    a same-uid attacker is explicitly out of scope, so it is best-effort, not an automated gate.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="19-keychain-key-and-acl-verification.html">← 19 — Keychain key &amp; ACL</a></span>

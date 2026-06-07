@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-RECORD-007</span> (no permission → 6),
@@ -65,9 +65,19 @@
   tests are hermetic and CI-safe. Keep one real-environment smoke test per fault code to
   confirm the seam faithfully represents the real path.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Prefer hermetic fault-injection env seams over real
+    OS-state mutation, keeping one real smoke test per fault.
+    <code>NORM_FORCE_NO_PERMISSION=screen|ax</code> forces the permission probe to report denied →
+    exit 6 with a remediation message (<span class="req">REQ-RECORD-007</span>); keep one
+    <code>tccutil</code>-based smoke test. <code>NORM_FORCE_NO_MACAPPTREE=1</code> (or a
+    <code>PYTHONPATH</code> stub raising <code>ImportError</code>) → exit 6 naming the dependency
+    (<span class="req">REQ-ENV-001</span>). Model-unavailable splits cleanly now that download is
+    init-only: "weights not provisioned" = skip <code>init</code> / <code>--skip-model</code> (or empty
+    <code>HF_HOME</code>) → exit 4, <code>MODEL_UNAVAILABLE</code>, message "run norm init"; "invalid
+    model_ref" = nonsense <code>--model</code> → exit 4, <code>INVALID_MODEL_REF</code>
+    (<span class="req">REQ-PREPROCESS-005</span>). Every message names the problem and the fix.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="22-capture-gating-test-harness.html">← 22 — Capture gating harness</a></span>

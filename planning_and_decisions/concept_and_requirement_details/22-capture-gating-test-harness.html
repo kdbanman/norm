@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-RECORD-001</span>,
@@ -51,9 +51,17 @@
   <p><strong>Recommendation: (a)</strong> for CLI-level acceptance tests +
   <strong>(c)</strong> for the hash/threshold math.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Adopt (a) + (c). Hidden injection seams make
+    <code>record --once</code> deterministic: <code>NORM_FAKE_IDLE=&lt;seconds&gt;</code> feeds a
+    scripted <code>HIDIdleTime</code>, and <code>NORM_FAKE_CAPTURE=&lt;dir&gt;</code> supplies prepared
+    image + AX pairs in place of macapptree, letting tests construct the exact phash/AX combinations
+    for <span class="req">REQ-RECORD-001/002/003/004</span> (stored-when-changed, skipped-while-idle,
+    deduped-when-unchanged, stored-when-only-one-of-phash/AX-changes). The hash/threshold math is also
+    unit-tested directly against the AX normalization in
+    <a href="08-dedupe-hash-inputs.html">[08]</a>. These remain test-only seams, not product
+    features.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="21-no-elevated-privileges-verification.html">← 21 — No elevated privileges</a></span>

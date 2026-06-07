@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-ARCH-001</span>,
@@ -53,9 +53,17 @@
   separate real-weights "cached, offline" run (→ inference still works) to cover both the
   negative and the positive form of the property.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> norm makes <em>no</em> network connection during
+    <code>record</code>/<code>report</code> — strengthened from "no inference socket" to "no egress,"
+    because weights are downloaded only by <code>norm init</code> (concept §5,
+    <span class="req">REQ-INIT-004</span>, <span class="req">REQ-ARCH-001</span>). Verify two ways:
+    (a) with <code>NORM_FAKE_MODEL=1</code>, run <code>report</code> under a socket monitor and assert
+    zero sockets opened; (b) a real-weights "cached, then offline" run (block network after
+    <code>init</code>) still produces a report, proving in-process inference. Because the first-load
+    download now lives in <code>init</code>, the report-time assertion is simply "zero connections,"
+    with no allowed-egress exception to special-case.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="16-inference-test-seam.html">← 16 — Inference test seam</a></span>

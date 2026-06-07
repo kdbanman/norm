@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-INIT-001</span> (key exists),
@@ -59,9 +59,20 @@
   the ACL boundary as a <strong>manual / code-review</strong> acceptance item
   (see <a href="20-negative-security-properties.html">[20]</a>).</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> <strong>Obsolete</strong> — norm uses no macOS Keychain;
+    the access gate is the app password (key model in
+    <a href="25-unattended-secret-input.html">[25]</a>, security model §7). Replace the three Keychain
+    checks with: (1) <strong>Existence</strong> — after <code>init</code>, assert
+    <code>data_dir/key.json</code> (the Argon2id-wrapped data key) exists and that <em>no</em> norm
+    Keychain item exists (<code>security find-generic-password -s "norm:datakey"</code> finds nothing).
+    (2) <strong>Distinctness</strong> — the wrapped key is password-derived and never equal to/derived
+    from the login password (code review of the key-gen path, <span class="req">REQ-SEC-002</span>).
+    (3) <strong>"Is it the gate" proxy</strong> — withhold the password and assert norm reports locked
+    (exit 3, <code>STORE_LOCKED</code>), closing the loop with <span class="req">REQ-SEC-004</span>.
+    ACL-binding-to-a-signed-binary is no longer relied upon, so the hard-to-verify ACL item is dropped
+    entirely.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="18-encryption-at-rest-verification.html">← 18 — Encryption at rest</a></span>

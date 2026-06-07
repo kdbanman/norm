@@ -15,7 +15,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-ARCH-001</span>
@@ -58,9 +58,21 @@
   <p><strong>Recommendation:</strong> ship <strong>(a) + (b)</strong>. Define the trace schema
   (one JSON object per call) as part of the spec so assertions are stable.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Ship (a) + (b) as a two-part observation seam.
+    <strong>User-facing:</strong> <code>report preprocess</code>/<code>report interval --dry-run</code>
+    prints the planned windows and the exact inputs that would reach <code>generate()</code> —
+    <code>model_ref</code>, the effective prompt and its <code>prompt_id</code>, per-window capture
+    ids, image count, and AX-text presence — then exits without loading the model (concept §9,
+    <span class="req">REQ-REPORT-002</span>). <strong>Test-only:</strong> a hidden
+    <code>NORM_FAKE_MODEL=1</code> env seam swaps <code>load()</code>/<code>generate()</code> for a spy
+    that returns canned markdown and appends one JSON record per call
+    (<code>{model_ref, prompt, prompt_id, n_images, has_ax_text}</code>) to a trace file the test
+    reads; tests assert against the trace, never stdout prose. Together these cover
+    <span class="req">REQ-ARCH-001</span>, <span class="req">REQ-PREPROCESS-002</span>,
+    <span class="req">REQ-INTERVAL-001</span>, <span class="req">REQ-CONFIG-003/004</span> with no
+    multi-GB weights.</p>
   </div>
 
   <nav class="botnav">

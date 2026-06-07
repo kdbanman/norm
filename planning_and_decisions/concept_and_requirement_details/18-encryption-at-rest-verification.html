@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-SEC-001</span>, plus the "blobs are ciphertext" clauses in
@@ -50,9 +50,18 @@
   reporting in <a href="20-negative-security-properties.html">[20]</a>. These are
   setup/inspection helpers run around CLI calls, not assertions on norm's stdout.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Adopt the magic-byte / parser negative tests as the core
+    executable criterion, run directly on files with no norm involvement: every blob under
+    <code>data_dir/blobs/</code> must not begin with a PNG/JPEG signature and must fail to decode as an
+    image; AX blobs must fail <code>json.loads()</code>; <code>data_dir/index.db</code> must not carry
+    the <code>SQLite format 3\0</code> header; and <code>data_dir/key.json</code> holds only the
+    Argon2id-wrapped key (no usable key material). Add an entropy check (near-random bytes) and a
+    round-trip control (<code>show --export</code>/<code>export</code> recovers valid PNG/JSON with the
+    password) to prove the at-rest files are encrypted real data. Covers
+    <span class="req">REQ-SEC-001</span> and the ciphertext clauses of
+    <span class="req">REQ-RECORD-001</span>/<span class="req">REQ-PREPROCESS-001</span>.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="17-no-inference-server-verification.html">← 17 — No inference server</a></span>

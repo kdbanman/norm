@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-SEC-003</span>,
@@ -52,9 +52,17 @@
   privileges. Confirm via <code>--status</code> showing <code>running=true</code> with a pid
   owned by the current user.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Per-user, no admin. Verify with a run-as-user,
+    no-<code>sudo</code>-on-PATH harness: every command succeeds or fails for its documented reason,
+    never a privilege error. Post-run audits: <code>find</code> the install and created files and
+    assert no setuid/setgid bits and no root-owned files under <code>data_dir</code> or
+    <code>~/.norm</code>; assert <code>record --install</code> creates a user LaunchAgent under
+    <code>~/Library/LaunchAgents</code> (gui domain), not a <code>/Library/LaunchDaemons</code> root
+    daemon — confirmed via <code>launchctl print gui/&lt;uid&gt;/&lt;label&gt;</code> and
+    <code>--status</code> showing <code>running=true</code> with a current-user pid. Covers
+    <span class="req">REQ-SEC-003</span>, <span class="req">REQ-RECORD-009</span>.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="20-negative-security-properties.html">← 20 — Negative security properties</a></span>

@@ -13,7 +13,7 @@
   <div class="meta">
     <div class="chips">
       <span class="chip chip-verify">Verification approach</span>
-      <span class="chip chip-todo">Unresolved</span>
+      <span class="chip chip-done">Resolved</span>
     </div>
     <div class="affects"><span class="label">Affects:</span>
       <span class="req">REQ-PREPROCESS-001</span>,
@@ -60,9 +60,20 @@
   <p>Document this as a <strong>standing convention</strong> so no one writes a brittle content
   assertion.</p>
 
-  <div class="resolution">
+  <div class="resolution resolved">
     <h2>Resolution</h2>
-    <p>TODO</p>
+    <p><span class="decided">Decided</span> Standing convention — never assert on generated prose.
+    Assert only structure, side effects, and inputs to <code>generate()</code>: a markdown blob was
+    written and is encrypted; row count equals the expected window count
+    (<a href="04-window-stride-edge-cases.html">[04]</a>); row fields
+    (<code>window_start/end</code>, <code>capture_ids</code>, <code>model</code>,
+    <code>prompt_id</code>); exit code and stdout-vs-<code>--output</code> routing; and, via the
+    <a href="16-inference-test-seam.html">[16]</a> seam or <code>--dry-run</code>, that
+    <code>generate()</code> received both modalities, the configured prompt, and the configured
+    <code>model_ref</code>. With <code>NORM_FAKE_MODEL</code> the canned markdown makes even
+    output-shape checks exact; real-weights runs are reserved for occasional smoke tests asserting only
+    "non-empty markdown, exit 0." Covers <span class="req">REQ-PREPROCESS-001</span>,
+    <span class="req">REQ-INTERVAL-001</span>.</p>
   </div>
   <nav class="botnav">
     <span class="prev"><span class="label">Previous</span><a href="23-environment-failure-simulation.html">← 23 — Environment failure simulation</a></span>

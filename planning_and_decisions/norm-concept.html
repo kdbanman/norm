@@ -113,9 +113,11 @@ pre.example {
       <li><strong>Idle gate + content dedupe:</strong> frames are not stored when the user is
       absent or the screen is unchanged. Bounds store growth and inference cost.</li>
       <li><strong>In-process inference:</strong> no network, no daemon, no localhost server.
-      The model runs inside the norm process via <code>mlx-vlm</code>.</li>
+      The model runs inside the norm process via <code>mlx-vlm</code>. Weights are fetched once by
+      <code>norm init</code>; <code>record</code> and <code>report</code> make no network calls.</li>
       <li><strong>Application-level encryption:</strong> data access is gated on a norm-specific
-      key, independent of the login password and of FileVault.</li>
+      app password — an Argon2id-wrapped data key stored on disk, like an SSH/SSL private key —
+      independent of the login password, the macOS Keychain, and FileVault.</li>
     </ul>
   </section>
 
@@ -135,7 +137,7 @@ pre.example {
     <p class="diagram-note">Architecture diagram — Mermaid source (paste into
     <a href="https://mermaid.live" target="_blank">mermaid.live</a> to visualize):</p>
     <pre class="diagram">flowchart TD
-    CFG["~/.norm (TOML)\ndefaults + prompts"] --&gt; CLI
+    CFG["~/.norm/ (dir)\nconfig.toml + optional\npassphrase file (chmod 400)"] --&gt; CLI
 
     subgraph CLI["norm — CLI frontend"]
         REC["record"]
@@ -153,7 +155,7 @@ pre.example {
     subgraph STORE["Encrypted store"]
         DB["SQLCipher index"]
         BLOB["AES-256-GCM blobs\n(images, AX, markdown)"]
-        KEY["Data key in Keychain\n(optional passphrase wrap)"]
+        KEY["Data key (256-bit)\nArgon2id-wrapped by app password\nwrapped key on disk; no Keychain"]
     end
 
     MLX["mlx-vlm (in-process)\nGemma 4 MLX weights\ntext + image -&gt; markdown"]
@@ -169,18 +171,19 @@ pre.example {
     <h3>Components</h3>
     <ul>
       <li><strong>CLI frontend (<code>norm</code>):</strong> argument parsing, config
-      resolution (CLI flag &gt; <code>~/.norm</code> &gt; built-in default), dispatch, unified
+      resolution (CLI flag &gt; <code>~/.norm/config.toml</code> &gt; built-in default), dispatch, unified
       exit codes.</li>
       <li><strong>Capture engine (<code>record</code>):</strong> timed loop — idle gate,
       macapptree capture, dedupe, encrypted write.</li>
       <li><strong>Encrypted store:</strong> SQLCipher index + AES-256-GCM blob files; data key
-      in Keychain, optionally passphrase-wrapped.</li>
+      Argon2id-wrapped by the app password and stored on disk (no macOS Keychain).</li>
       <li><strong>Inference (<code>mlx-vlm</code>, in-process):</strong> loads Gemma 4 MLX
       weights; <code>generate()</code> with image + text.</li>
       <li><strong>Report engine:</strong> <code>report preprocess</code> (sliding window),
       <code>report interval</code> (aggregation).</li>
-      <li><strong>Config: <code>~/.norm</code> (TOML):</strong> default parameters and the two
-      prompts.</li>
+      <li><strong>Config: <code>~/.norm/</code> (directory):</strong> <code>config.toml</code>
+      (default parameters and the two prompts) plus the optional <code>chmod 400</code> password
+      file.</li>
     </ul>
 
     <h3>Dependencies</h3>
@@ -202,10 +205,12 @@ pre.example {
     <ul>
       <li><strong>Library:</strong> <code>mlx-vlm</code>, run in-process on Apple Silicon
       (MLX). No server, no daemon, no socket; norm does not start or connect to any inference
-      endpoint.</li>
+      endpoint, and makes no network connection during <code>record</code> or <code>report</code>.</li>
       <li><strong>Model:</strong> an MLX repo id or local path. Default
-      <code>mlx-community/gemma-4-e4b-it-4bit</code>. First load downloads weights to the
-      Hugging Face cache (<code>~/.cache/huggingface</code>); later loads are local.</li>
+      <code>mlx-community/gemma-4-e4b-it-4bit</code>. Weights are downloaded by <code>norm init</code>
+      to the Hugging Face cache (<code>~/.cache/huggingface</code>); <code>record</code> and
+      <code>report</code> never download. If the configured model's weights are absent at report time
+      the command fails (exit 4, <code>MODEL_UNAVAILABLE</code>) and points to <code>norm init</code>.</li>
       <li><strong>Call pattern:</strong>
         <code>model, processor = load(model_ref)</code> →
         <code>prompt = apply_chat_template(processor, model.config, text, num_images=n)</code> →
@@ -273,14 +278,25 @@ pre.example {
       has no per-directory or per-process scope and is not norm's access gate. It remains
       compatible as an at-rest defense.</li>
       <li><strong>At rest:</strong> SQLCipher (AES-256) index; AES-256-GCM blobs.</li>
-      <li><strong>Key custody:</strong> random 256-bit data key as a dedicated Keychain item
-      (ACL scoped to the norm binary), optionally wrapped by a norm passphrase via Argon2id.
-      The login password is never read or stored.</li>
+      <li><strong>Key custody:</strong> a random 256-bit data key, Argon2id-wrapped by a norm
+      app password and stored on disk (<code>data_dir/key.json</code>). <strong>No macOS Keychain
+      is used.</strong> The login password is never read or stored.</li>
+      <li><strong>Threat model:</strong> protects captured data against other user accounts and a
+      stolen disk, and against same-user applications while norm is idle. In interactive use the app
+      password is never written to disk, so other same-user processes cannot unlock the store. For
+      unattended recording the password is stored in a <code>chmod 400</code> file (like an
+      unencrypted SSH/SSL private key); this deliberately trades away the same-user guarantee in
+      exchange for headless operation.</li>
       <li><strong>No elevation:</strong> runs as the user; no sudo, no setuid, no privileged
       helper.</li>
-      <li><strong>Unlock required:</strong> any read or write of data requires a successful
-      unlock. The key is resident in process memory only for the duration of a command and is
-      zeroed on exit. No long-lived mounted volume exists.</li>
+      <li><strong>Unlock required:</strong> any read or write of data requires the app password,
+      supplied by interactive prompt, the <code>NORM_PASSPHRASE</code> environment variable, or a
+      <code>chmod 400</code> password file under <code>~/.norm/</code>. The derived key is resident
+      in process memory only for the duration of a command and is zeroed on exit; no long-lived
+      unlocked store exists.</li>
+      <li><strong>Config &amp; secrets layout:</strong> <code>~/.norm</code> is a directory
+      (<code>chmod 700</code>) holding <code>config.toml</code> and the optional <code>chmod 400</code>
+      password file; the Argon2id-wrapped data key lives under <code>data_dir</code>.</li>
       <li><strong>Transient decryption:</strong> report-time blobs are decrypted to in-memory
       PIL images/strings, passed to <code>mlx-vlm</code>, and discarded; no plaintext is
       written to disk.</li>
@@ -329,14 +345,19 @@ pre.example {
       <code>generate(prompt_preprocess, images + AX text)</code> in-process and store one
       markdown summary per window. A window's identity is its ordered capture set; a window is "done"
       when a row for that set exists, so re-runs skip it. <code>--force</code> recomputes and overwrites
-      covered windows (and is how a prompt/model change takes effect).</li>
+      covered windows (and is how a prompt/model change takes effect). <code>--dry-run</code> prints
+      the planned windows and the inputs that would reach <code>generate()</code> (window count,
+      capture ids, <code>model_ref</code>, effective prompt), then exits without loading the model
+      or writing rows.</li>
       <li><strong><code>report interval</code>:</strong> gather per-window markdown summaries
       within <code>[from, to]</code>; call <code>generate(prompt_interval, markdowns)</code>, emit
       aggregated markdown, and <strong>persist</strong> it as an <code>interval_report</code> row. When
       the range isn't fully covered: interactive runs explain the gap and prompt (default: summarize the
       missing windows first, then report; alternative: exit); non-interactive runs take the default
       automatically. <code>--auto-preprocess</code> forces "summarize first" without asking;
-      <code>--strict</code> exits <code>5</code> (<code>COVERAGE_MISSING</code>) without doing work.</li>
+      <code>--strict</code> exits <code>5</code> (<code>COVERAGE_MISSING</code>) without doing work.
+      <code>--dry-run</code> reports coverage and the preprocess summaries that would be aggregated,
+      without running inference or persisting a row.</li>
     </ul>
 
     <h3>Windows, coverage &amp; edge cases</h3>
@@ -360,7 +381,7 @@ pre.example {
   <section id="s10">
     <h2>10. Worked examples</h2>
     <p style="font-size:.88rem;color:var(--muted)">State tags: <code>FS</code> filesystem,
-    <code>IDX</code> SQLCipher index rows, <code>KC</code> Keychain, <code>LD</code> launchd,
+    <code>IDX</code> SQLCipher index rows, <code>KEY</code> wrapped data key file, <code>LD</code> launchd,
     <code>PROC</code> process, <code>HF</code> Hugging Face weight cache,
     <code>OUT</code> stdout/stderr, <code>EXIT</code> exit code.
     <code>data_dir</code> default = <code>~/Library/Application Support/norm</code>.
@@ -372,12 +393,15 @@ pre.example {
       <div class="worked-example" id="ex-1">
         <h3>§10.1 init</h3>
         <pre class="example">$ norm init
-before  FS: no ~/.norm; no data_dir          KC: no norm key
-action  write config; create store; mint key
-after   FS: ~/.norm (TOML, all default keys); data_dir/index.db (SQLCipher header);
-            data_dir/blobs/ (empty)
-        KC: item "norm:datakey" (random 256-bit, ACL=norm binary)
-        OUT(stdout): config path + data_dir path     EXIT: 0</pre>
+before  FS: no ~/.norm; no data_dir      HF: default weights not cached
+action  prompt for app password (or read NORM_PASSPHRASE); write config dir; create store;
+        mint 256-bit data key + Argon2id-wrap with the password; download default model
+after   FS: ~/.norm/ (dir, chmod 700) with config.toml (all default keys);
+            data_dir/index.db (SQLCipher header); data_dir/blobs/ (empty);
+            data_dir/key.json (Argon2id-wrapped data key)
+        HF: default model weights cached (~/.cache/huggingface)
+        OUT(stdout): config path + data_dir path     EXIT: 0
+note    no Keychain item created; pass --skip-model to skip the weight download</pre>
       </div>
 
       <div class="worked-example" id="ex-2">
@@ -442,7 +466,9 @@ $ norm record --status
 after   OUT: running=true pid=&lt;n&gt;     EXIT: 0
 
 $ norm record --stop
-after   LD: agent stopped; subsequent --status -&gt; running=false     EXIT: 0</pre>
+after   LD: agent stopped; subsequent --status -&gt; running=false     EXIT: 0
+note    a passphrase-wrapped store unlocks unattended from the chmod 400 password file under
+        ~/.norm/ (or NORM_PASSPHRASE); installs a user LaunchAgent, never a root LaunchDaemon</pre>
       </div>
 
       <div class="worked-example" id="ex-8">
@@ -551,22 +577,23 @@ after   IDX: captures + matching summaries/reports removed     EXIT: 0</pre>
       <div class="worked-example" id="ex-17">
         <h3>§10.17 config set / get</h3>
         <pre class="example">$ norm config set interval_minutes 10
-before  ~/.norm: interval_minutes = 5
-after   ~/.norm: interval_minutes = 10 (valid TOML)     EXIT: 0
+before  ~/.norm/config.toml: interval_minutes = 5
+after   ~/.norm/config.toml: interval_minutes = 10 (valid TOML)     EXIT: 0
 
 $ norm config get interval_minutes
 after   OUT(stdout): 10     EXIT: 0
 
 $ norm config set bogus 1
-after   ~/.norm unchanged; OUT(stderr): "unknown key 'bogus'"     EXIT: 2</pre>
+after   ~/.norm/config.toml unchanged; OUT(stderr): "unknown key 'bogus'"     EXIT: 2</pre>
       </div>
 
       <div class="worked-example" id="ex-18">
         <h3>§10.18 passwd</h3>
         <pre class="example">$ norm passwd
-before  KC: data key wrapped by old passphrase
-action  prompt old (verify) + new (twice, not echoed); re-wrap key with new passphrase
-after   KC: key wrapped by new passphrase; old passphrase no longer unlocks
+before  FS: data_dir/key.json wrapped by old password
+action  prompt old (verify) + new (twice, not echoed) -- or read NORM_OLD_PASSPHRASE +
+        NORM_NEW_PASSPHRASE; re-wrap the data key with the new password
+after   FS: key.json wrapped by new password; old password no longer unlocks
         OUT: "passphrase updated"     EXIT: 0
 note    data blobs are NOT bulk re-encrypted; only the key wrapping changes</pre>
       </div>
@@ -583,7 +610,7 @@ after   FS: unchanged
 
       <div class="worked-example" id="ex-20">
         <h3>§10.20 any data op while locked</h3>
-        <pre class="example">$ norm list           # KC key absent, no passphrase
+        <pre class="example">$ norm list           # no app password: not prompted, no NORM_PASSPHRASE, no password file
 before  store not unlockable
 action  none (refuse)
 after   FS/IDX: unchanged; no plaintext produced
@@ -601,8 +628,8 @@ after   FS/IDX: unchanged; no plaintext produced
         <tr><td><code>0</code></td><td>success</td></tr>
         <tr><td><code>1</code></td><td>runtime error</td></tr>
         <tr><td><code>2</code></td><td>usage error (unknown command/subcommand, missing/invalid arg)</td></tr>
-        <tr><td><code>3</code></td><td>auth error (store locked, wrong passphrase, missing/denied key)</td></tr>
-        <tr><td><code>4</code></td><td>model error (MLX weights unavailable offline, invalid model_ref, inference failure)</td></tr>
+        <tr><td><code>3</code></td><td>auth error (store locked, wrong or missing app password)</td></tr>
+        <tr><td><code>4</code></td><td>model error (weights not downloaded — run norm init, invalid model_ref, inference failure)</td></tr>
         <tr><td><code>5</code></td><td>not found (no captures / no preprocess coverage / unknown id)</td></tr>
         <tr><td><code>6</code></td><td>environment error (missing Accessibility/Screen Recording permission, macapptree unavailable)</td></tr>
       </tbody>
