@@ -13,12 +13,11 @@ The planning docs are the source of truth — read the relevant one before chang
   `planning_and_decisions/norm-requirements.html`
 - **Decision records** — `planning_and_decisions/` (see Documentation discipline below)
 
-(These are large; open them when relevant rather than loading them every session.)
+(These are large; open them when relevant rather than loading them every session, and prefer working with the developer tooling, `normdev`.)
 
 ## Development workflow
 
-Always work in this loop. Pick **one outstanding requirement** — or a small, cohesively
-scoped chunk of them — from the requirements doc, then:
+Always work in this loop. Pick one or more outstanding requirements (as long as it's a cohesively scoped chunk) from the requirements doc, then:
 
 1. **RED** — Write high-quality *executable* acceptance criteria covering the
    requirement(s) **before** implementing. Use whichever fits:
