@@ -42,6 +42,29 @@ class NormStore:
         self.config_file = self.base / ".norm" / "config.toml"
         self.data_dir = self.base / "data"
 
+    def _argv(self, *argv: str) -> list[str]:
+        """The full ``python -m norm`` argv with this store's config + data dir."""
+        return [
+            sys.executable, "-m", "norm",
+            "--config", str(self.config_file),
+            "--data-dir", str(self.data_dir),
+            *argv,
+        ]
+
+    def _env(
+        self, passphrase: str | None, extra_env: dict[str, str] | None
+    ) -> dict[str, str]:
+        """The process env: inherited, with ``NORM_PASSPHRASE`` and seams layered on.
+
+        ``passphrase=None`` drops ``NORM_PASSPHRASE`` entirely (a locked store).
+        """
+        env = {k: v for k, v in os.environ.items() if k != "NORM_PASSPHRASE"}
+        if passphrase is not None:
+            env["NORM_PASSPHRASE"] = passphrase
+        if extra_env:
+            env.update(extra_env)
+        return env
+
     def run(
         self,
         *argv: str,
@@ -55,21 +78,33 @@ class NormStore:
         additional variables (e.g. the hidden ``NORM_FAKE_*`` / ``NORM_FORCE_*``
         capture seams).
         """
-        env = {k: v for k, v in os.environ.items() if k != "NORM_PASSPHRASE"}
-        if passphrase is not None:
-            env["NORM_PASSPHRASE"] = passphrase
-        if extra_env:
-            env.update(extra_env)
         return subprocess.run(
-            [
-                sys.executable, "-m", "norm",
-                "--config", str(self.config_file),
-                "--data-dir", str(self.data_dir),
-                *argv,
-            ],
+            self._argv(*argv),
             capture_output=True,
             text=True,
-            env=env,
+            env=self._env(passphrase, extra_env),
+            stdin=subprocess.DEVNULL,
+        )
+
+    def popen(
+        self,
+        *argv: str,
+        passphrase: str | None = PASSPHRASE,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.Popen[str]:
+        """Spawn ``norm`` without waiting — for long-running commands a test must signal.
+
+        Same wiring as :meth:`run` (config/data dir, passphrase, seams, closed
+        stdin) but returns the live :class:`subprocess.Popen` with piped
+        stdout/stderr, so the caller can deliver SIGINT/SIGTERM and then
+        ``communicate()`` for the exit code and output (RECORD-006).
+        """
+        return subprocess.Popen(
+            self._argv(*argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self._env(passphrase, extra_env),
             stdin=subprocess.DEVNULL,
         )
 

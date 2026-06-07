@@ -157,13 +157,15 @@ def test_req_show_includes_the_concept_example(capsys):
 #
 # These pin the behaviour that replaces the ad-hoc "strip tags, take [:4000]"
 # heredoc agents kept re-deriving: the reader must load *every* ADR in document
-# order, decode HTML entities, and never truncate the tail (ADR-006 lives there).
+# order, decode HTML entities, and never truncate the tail (the newest ADR).
 
 
 def test_load_decisions_reads_every_record_in_order():
     rows = decs.load_decisions()
     ids = [d.id for d in rows]
-    assert ids == ["ADR-001", "ADR-002", "ADR-003", "ADR-004", "ADR-005", "ADR-006"]
+    # Contiguous and ascending from ADR-001 in document order; robust to new ADRs.
+    assert len(ids) >= 6
+    assert ids == [f"ADR-{n:03d}" for n in range(1, len(ids) + 1)]
     one = rows[0]
     assert one.title.startswith("Encrypted index")  # heading minus the "ADR-001 — " prefix
     assert one.status == "resolved"  # from the <div class="resolution resolved">
@@ -186,10 +188,12 @@ def test_decision_bodies_are_decoded_and_free_of_html_chrome():
 def test_decisions_are_not_truncated_head_and_tail_both_present():
     rows = decs.load_decisions()
     bodies = {d.id: d.body for d in rows}
-    # the [:4000] hack kept only the head; the tail ADR (ADR-006) must load in full
+    # the [:4000] hack kept only the head; a deep record (ADR-006) must load in full
     assert "REQ-GLOBAL-002" in bodies["ADR-006"]
     assert "one-liners every session" in bodies["ADR-006"]  # body text, not just heading
     assert "AES-256-GCM" in bodies["ADR-001"]  # head still there too
+    # ...and the *last* record in document order loads fully, not as a truncated stub
+    assert len(rows[-1].body) > 200
     assert sum(len(b) for b in bodies.values()) > 6000  # well past the 4000-char cut
 
 
@@ -209,7 +213,8 @@ def test_dec_list_prints_every_record_with_status(capsys):
     assert code == 0
     assert "ADR-001" in out and "ADR-006" in out
     assert "[resolved]" in out
-    assert "6 decision record(s)" in out
+    # Count is reported and matches what the reader loaded (robust to new ADRs).
+    assert f"{len(decs.load_decisions())} decision record(s)" in out
 
 
 def test_dec_show_prints_full_untruncated_record(capsys):

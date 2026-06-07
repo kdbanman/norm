@@ -49,6 +49,18 @@ def generate_data_key() -> bytes:
     return os.urandom(DATA_KEY_BYTES)
 
 
+def scrub(buf: bytearray) -> None:
+    """Best-effort zero a mutable key buffer in place (defense-in-depth, RECORD-006).
+
+    The persistent ``record`` loop holds the unwrapped data key in a ``bytearray``
+    precisely so it can be zeroed on shutdown rather than left resident for the life
+    of a long-running process (concept §7). CPython can't zero the immutable
+    ``bytes`` that AES-GCM/Argon2 hand back, so the loop converts once to this
+    buffer and uses it everywhere; this scrubs that single copy.
+    """
+    buf[:] = bytes(len(buf))
+
+
 def _b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 

@@ -62,3 +62,22 @@ def test_aesgcm_roundtrip_and_tamper_detection():
     tampered[-1] ^= 0x01
     with pytest.raises(crypto.DecryptionError):
         crypto.aesgcm_decrypt(key, bytes(tampered))
+
+
+# ── key hygiene: zero the in-memory data key on shutdown (RECORD-006, SEC) ───────
+
+
+def test_scrub_zeros_key_buffer_in_place():
+    key = bytearray(b"\xa5" * crypto.DATA_KEY_BYTES)
+    crypto.scrub(key)
+    assert key == bytearray(crypto.DATA_KEY_BYTES)  # all zero...
+    assert len(key) == crypto.DATA_KEY_BYTES  # ...same length, mutated in place
+
+
+def test_scrubbed_key_still_usable_as_an_aesgcm_key_until_scrubbed():
+    """The working key is a bytearray so it can be zeroed; it must still encrypt."""
+    key = bytearray(crypto.generate_data_key())
+    ciphertext = crypto.aesgcm_encrypt(key, b"payload")
+    assert crypto.aesgcm_decrypt(key, ciphertext) == b"payload"
+    crypto.scrub(key)
+    assert key == bytearray(crypto.DATA_KEY_BYTES)

@@ -230,6 +230,44 @@
     </div>
   </section>
 
+  <section id="adr-007">
+    <h2>ADR-007 — The record loop holds the data key in a scrubbable bytearray; zeroing is best-effort</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-006</span>
+      <span class="req">REQ-SEC-006</span>
+      · concept §7
+    </p>
+
+    <p><strong>Context.</strong> Concept §7 holds that the unwrapped data key "lives only
+    for the life of the command." For a one-shot command that life ends moments later when
+    the process exits; the persistent <code>record</code> loop (REQ-RECORD-005) extends it
+    indefinitely, so REQ-RECORD-006 requires the key be zeroed on shutdown — not merely
+    left to process exit. But CPython offers no way to zero the immutable <code>bytes</code>
+    that Argon2/AES-GCM return from <code>unwrap_data_key</code>.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> <code>open_store</code> still returns
+      <code>bytes</code>; <code>record</code> converts it once to a <code>bytearray</code>
+      working copy (dropping the original reference), uses that for every blob/index
+      encrypt, and zeroes it via <code>crypto.scrub()</code> in a <code>finally</code> that
+      covers the loop, the <code>--once</code> path, and error exits alike. SIGINT/SIGTERM
+      set a stop event so the loop drains and that same <code>finally</code> runs — each
+      tick already flushes the index, so the store is consistent and locked, the key is
+      zeroed, and the process exits&nbsp;0.</p>
+      <p class="rationale">Scrubbing the single long-lived copy is the meaningful win for a
+      process that may run for days; the transient immutable <code>bytes</code> from unwrap
+      (and any copies the crypto backend makes internally) cannot be zeroed and are left to
+      the GC plus process exit — an irreducible CPython limitation, not a norm gap, so the
+      guarantee is honestly "best-effort." Threading a <code>bytearray</code> through
+      <code>session</code>/<code>store</code>/<code>blobs</code> was rejected: churn across
+      every reader for no added guarantee, since short commands exit immediately anyway.
+      The loop is kept testable by two hidden seams (<code>NORM_FAKE_MAX_TICKS</code> to
+      bound it, <code>NORM_FAKE_SLEEP_LOG</code> to make the cadence observable without
+      waiting); the signal contract is asserted against a real subprocess.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>
