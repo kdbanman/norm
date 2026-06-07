@@ -50,6 +50,14 @@ def not_initialized(message: str) -> NormError:
     return NormError("NOT_INITIALIZED", ExitCode.NOT_FOUND, message)
 
 
+def permission_missing(message: str) -> NormError:
+    return NormError("PERMISSION_MISSING", ExitCode.ENVIRONMENT_ERROR, message)
+
+
+def macapptree_missing(message: str) -> NormError:
+    return NormError("MACAPPTREE_MISSING", ExitCode.ENVIRONMENT_ERROR, message)
+
+
 def render_error(err: NormError, *, json_mode: bool) -> None:
     """Emit ``err`` — JSON envelope on stdout under ``--json``, else stderr prose."""
     if json_mode:

@@ -26,15 +26,24 @@ class CliStore:
         self.config_file = tmp_path / ".norm" / "config.toml"
         self.data_dir = tmp_path / "data"
 
-    def run(self, *argv: str, passphrase: str | None = PASSPHRASE) -> subprocess.CompletedProcess[str]:
+    def run(
+        self,
+        *argv: str,
+        passphrase: str | None = PASSPHRASE,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         """Invoke ``norm --config <cf> --data-dir <dd> <argv...>`` non-interactively.
 
         ``passphrase=None`` runs with no ``NORM_PASSPHRASE`` (a locked store);
-        stdin is closed so no command can block on a prompt.
+        stdin is closed so no command can block on a prompt. ``extra_env`` injects
+        additional environment variables (e.g. the hidden ``NORM_FAKE_*`` /
+        ``NORM_FORCE_*`` test seams).
         """
         env = {k: v for k, v in os.environ.items() if k != "NORM_PASSPHRASE"}
         if passphrase is not None:
             env["NORM_PASSPHRASE"] = passphrase
+        if extra_env:
+            env.update(extra_env)
         return subprocess.run(
             [
                 sys.executable, "-m", "norm",

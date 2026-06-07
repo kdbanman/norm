@@ -125,6 +125,70 @@
     </div>
   </section>
 
+  <section id="adr-004">
+    <h2>ADR-004 — AX "screen unchanged": concrete strip-list + coarse geometry buckets</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-003</span>
+      <span class="req">REQ-RECORD-004</span>
+      · concept §8 ("Resolved details")
+    </p>
+
+    <p><strong>Context.</strong> Concept §8 says <code>ax_hash</code> is a normalized
+    projection of the AX tree — keep structure/roles/labels/coarse geometry, strip
+    focus, selection/caret, cursor, scroll offset, live clocks, ephemeral ids — and
+    that "this strip-list <em>defines</em> screen unchanged." The concrete list is an
+    implementation decision, and macapptree's exact AX JSON schema isn't pinned yet.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> <code>hashing._normalize</code> walks the
+      AX JSON and, case-insensitively by key name: drops a fixed
+      <code>_STRIP_KEYS</code> set (focus/selection/caret/cursor/scroll +
+      id/identifier/uid/uuid/pid/window_id as "ephemeral ids"); rounds numeric geometry
+      components (<code>x,y,w,h,width,height,left,top,right,bottom</code>, and
+      list-valued <code>position/size/frame/bounds/rect</code>) to a 50&nbsp;px grid;
+      keeps everything else (roles, labels, nesting). <code>ax_hash</code> is SHA-256
+      over the canonical (<code>sort_keys</code>) JSON of that projection.</p>
+      <p class="rationale">Schema-tolerant: it matches volatile keys wherever they
+      appear rather than assuming macapptree's layout, so it survives the real binding
+      landing later. Geometry bucketing absorbs sub-pixel layout jitter while a real
+      move crosses a bucket. <em>Deferred:</em> "live clocks" need value-pattern
+      heuristics, not key stripping — left until the real AX schema is integrated; the
+      RECORD-003/004 contract (dedupe needs both phash and AX equal) holds regardless.
+      The math is unit-tested below the CLI in <code>tests/test_hashing.py</code>.</p>
+    </div>
+  </section>
+
+  <section id="adr-005">
+    <h2>ADR-005 — Idle gap buffered in the index <code>meta</code> table across ticks (max, not sum)</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-002</span>
+      · concept §8 · binds <span class="req">REQ-RECORD-001</span>
+    </p>
+
+    <p><strong>Context.</strong> An idle tick stores nothing but must stamp the elapsed
+    idle as <code>idle_gap_s</code> on the <em>next</em> stored capture (concept §8).
+    <code>record --once</code> is a fresh process per tick, so the pending gap has to
+    survive between invocations, and IOKit <code>HIDIdleTime</code> reports cumulative
+    idle since the last input — successive idle reads overlap rather than add.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> The pending gap lives in the encrypted
+      index <code>meta</code> table under <code>pending_idle_s</code>. An idle tick sets
+      it to <code>max(prior, observed)</code>; a stored capture reads it into
+      <code>idle_gap_s</code> and resets it to 0. A deduped tick leaves it untouched.</p>
+      <p class="rationale"><code>max</code> (not sum) avoids double-counting overlapping
+      cumulative <code>HIDIdleTime</code> reads while guaranteeing
+      <code>idle_gap_s &ge; observed idle</code> (the RECORD-002 contract). Reusing
+      <code>meta</code> keeps the buffer inside the same atomic, encrypted flush as the
+      capture write — no extra on-disk state. <em>Scope:</em> this iteration ships the
+      seam-tested single-shot engine (<code>--once</code>); the persistent loop, signal
+      handling, and launchd lifecycle (REQ-RECORD-005/006/009) and the real macapptree
+      binding land next, mirroring how <code>init</code> deferred the model download.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

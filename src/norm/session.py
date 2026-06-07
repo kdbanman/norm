@@ -65,6 +65,20 @@ def resolve_paths(args: argparse.Namespace) -> StorePaths:
     )
 
 
+def load_config(paths: StorePaths) -> dict:
+    """Read the config file for ``paths`` (``{}`` if absent or unreadable).
+
+    Commands pair this with :func:`norm.config.effective_value` to apply
+    flag > config > default precedence (REQ-GLOBAL-006).
+    """
+    if not paths.config_file.exists():
+        return {}
+    try:
+        return config_mod.read_config(paths.config_file)
+    except (OSError, ValueError):
+        return {}
+
+
 def is_initialized(paths: StorePaths) -> bool:
     """True iff a store exists: both the wrapped key and the encrypted index."""
     return paths.key_file.exists() and paths.index_file.exists()

@@ -74,6 +74,19 @@ def write_config(config_file: Path, values: dict) -> None:
     Path(config_file).write_text(tomli_w.dumps(ordered))
 
 
+def effective_value(key: str, flag_value: object, config: dict | None) -> object:
+    """Resolve one config key by precedence: CLI flag > config file > built-in default.
+
+    ``flag_value`` is the parsed CLI flag (``None`` when the flag was absent); a
+    command passes its flag here so every key honors REQ-GLOBAL-006 consistently.
+    """
+    if flag_value is not None:
+        return flag_value
+    if config and config.get(key) is not None:
+        return config[key]
+    return DEFAULTS[key]
+
+
 def default_config(data_dir: Path) -> dict:
     """Build a full default config with ``data_dir`` set to the resolved path."""
     config = dict(DEFAULTS)

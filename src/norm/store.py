@@ -16,11 +16,10 @@ unchanged.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from pathlib import Path
 
-from norm import crypto
+from norm import crypto, fsutil
 
 SCHEMA_VERSION = 1
 
@@ -89,7 +88,7 @@ def flush_index(con: sqlite3.Connection, path: Path, data_key: bytes) -> None:
     """Serialize ``con``, encrypt it with ``data_key``, and atomically write ``path``."""
     con.commit()
     ciphertext = crypto.aesgcm_encrypt(data_key, con.serialize())
-    _atomic_write(Path(path), ciphertext)
+    fsutil.atomic_write(Path(path), ciphertext)
 
 
 def create_index(path: Path, data_key: bytes) -> None:
@@ -145,20 +144,67 @@ def list_captures(
         params.append(end)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY ts"
+    sql += " ORDER BY ts, id"  # id breaks ties when captures share a second
     return [dict(zip(_LIST_COLUMNS, row)) for row in con.execute(sql, params)]
 
 
-def _atomic_write(path: Path, data: bytes) -> None:
-    """Write ``data`` to ``path`` atomically and owner-only (temp file, then rename)."""
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+# ── write side (record) ─────────────────────────────────────────────────────────
+
+# Fields carried on the "last stored capture" used by the dedupe gate (concept §8).
+_LAST_CAPTURE_COLUMNS = ("id", "phash", "ax_hash", "duration_s")
+
+
+def last_capture(con: sqlite3.Connection) -> dict | None:
+    """The most recently stored capture (highest id), or ``None`` if there are none.
+
+    The dedupe gate compares each new frame against this row (RECORD-003/004).
+    """
+    row = con.execute(
+        f"SELECT {', '.join(_LAST_CAPTURE_COLUMNS)} FROM capture ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return dict(zip(_LAST_CAPTURE_COLUMNS, row)) if row else None
+
+
+def insert_capture(
+    con: sqlite3.Connection,
+    *,
+    ts: str,
+    active_app: str | None,
+    idle_gap_s: int,
+    phash: str,
+    ax_hash: str,
+    image_ref: str,
+    ax_ref: str,
+    duration_s: int,
+) -> int:
+    """Insert one capture row and return its id."""
+    cur = con.execute(
+        "INSERT INTO capture "
+        "(ts, active_app, idle_gap_s, phash, ax_hash, image_ref, ax_ref, duration_s) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (ts, active_app, idle_gap_s, phash, ax_hash, image_ref, ax_ref, duration_s),
+    )
+    return int(cur.lastrowid)
+
+
+def extend_duration(con: sqlite3.Connection, capture_id: int, add_seconds: int) -> None:
+    """Add ``add_seconds`` to a capture's ``duration_s`` (a deduped tick, RECORD-003)."""
+    con.execute(
+        "UPDATE capture SET duration_s = duration_s + ? WHERE id = ?",
+        (add_seconds, capture_id),
+    )
+
+
+def get_meta(con: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
+    """Read a value from the ``meta`` key/value table (e.g. buffered idle)."""
+    row = con.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_meta(con: sqlite3.Connection, key: str, value: str) -> None:
+    """Upsert a value into the ``meta`` key/value table."""
+    con.execute(
+        "INSERT INTO meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
+    )
