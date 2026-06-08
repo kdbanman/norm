@@ -9,14 +9,21 @@ readme = "CLAUDE.md"
 requires-python = ">=3.11"
 license = "MIT"
 dynamic = ["version"]
-# Runtime deps (macapptree, mlx-vlm, imagehash, SQLCipher, argon2-cffi) are added
-# in the iterations that need them; the CLI skeleton needs only the stdlib.
+# Runtime deps: encrypted store (argon2-cffi/cryptography), config I/O (tomli-w),
+# dedupe (imagehash/pillow), capture (macapptree + pyobjc Quartz/ApplicationServices
+# for the screenshot + AX tree and permission preflight), and in-process inference
+# (mlx-vlm) with its weight provisioning (huggingface-hub).
 dependencies = [
     "argon2-cffi>=25.1.0",
     "cryptography>=48.0.0",
     "tomli-w>=1.2.0",
     "imagehash>=4.3.1",
     "pillow>=11.0.0",
+    "macapptree>=0.0.2",
+    "mlx-vlm>=0.6.2",
+    "huggingface-hub>=1.18.0",
+    "pyobjc-framework-quartz>=10.3.1",
+    "pyobjc-framework-applicationservices>=10.3.1",
 ]
 
 [project.scripts]
@@ -30,6 +37,12 @@ packages = ["src/norm"]
 
 [dependency-groups]
 dev = ["pytest>=8"]
+
+[tool.uv]
+# macapptree 0.0.2 mis-declares pytest==7.4.4 as a *runtime* dependency (it's only
+# used by its own test suite), which collides with our dev pytest>=8. pytest is never
+# imported by macapptree at runtime, so force a compatible version graph-wide.
+override-dependencies = ["pytest>=8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

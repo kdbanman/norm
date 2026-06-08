@@ -116,6 +116,14 @@ def _check_permissions() -> None:
             f"{label} permission not granted; enable norm under "
             "System Settings → Privacy & Security and retry"
         )
+    # The real OS probe only applies when a real capture will actually run. Both capture
+    # seams stand in for the real screen — NORM_FAKE_CAPTURE supplies frames, and
+    # NORM_FORCE_NO_MACAPPTREE (ENV-001) forces the backend absent — so under either there
+    # is nothing to probe. NORM_FORCE_NO_PERMISSION above still exercises the denied path
+    # (RECORD-007); a genuine run (no seam) still hits the probe. Without this the probe
+    # would fail in any environment lacking the grant, even one only driving the seams.
+    if os.environ.get(ENV_FAKE_CAPTURE) or os.environ.get(ENV_FORCE_NO_MACAPPTREE):
+        return
     _check_real_permissions()
 
 

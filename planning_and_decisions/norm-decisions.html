@@ -500,6 +500,50 @@
     </div>
   </section>
 
+  <section id="adr-013">
+    <h2>ADR-013 — Declaring the deferred capture/inference deps: a pytest-pin override and a permission-probe seam gate</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-ENV-001</span>
+      · <span class="req">REQ-RECORD-007</span>
+      · <span class="req">REQ-ARCH-001</span>
+      · <span class="req">REQ-INIT-004</span>
+      · concept §8
+      · ADR-012
+    </p>
+
+    <p><strong>Context.</strong> The heavy runtime deps were deferred (ADR-012:
+    <code>mlx-vlm</code>/<code>huggingface_hub</code> "stay lazily imported, never hard
+    dependencies"; the macapptree and pyobjc bindings likewise unwired), so the project passed its
+    suite through seams but could not actually <code>init</code>/<code>record</code>/<code>report</code>
+    on a real machine. Declaring them surfaced two integration warts that the seam-only path had hidden.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> <code>macapptree</code>, <code>mlx-vlm</code>,
+      <code>huggingface-hub</code>, and pyobjc (<code>Quartz</code>, <code>ApplicationServices</code>)
+      are now declared runtime deps. The code still imports
+      <code>mlx-vlm</code>/<code>huggingface_hub</code>/<code>macapptree</code> <em>lazily</em> (their
+      absence still yields the contractual <code>MODEL_UNAVAILABLE</code> / macapptree-missing
+      errors), but the heavy Apple-Silicon ML stack is now present in every environment — the
+      trade-off ADR-012 had deferred.</p>
+      <p><strong>pytest-pin override.</strong> <code>macapptree&nbsp;0.0.2</code> mis-declares
+      <code>pytest==7.4.4</code> as a <em>runtime</em> dependency (it is used only by its own test
+      suite), colliding with our dev <code>pytest&gt;=8</code>. pytest is never imported by
+      macapptree at runtime, so <code>[tool.uv] override-dependencies = ["pytest&gt;=8"]</code> forces
+      one compatible version graph-wide instead of pinning the project back to 7.x.</p>
+      <p><strong>Permission-probe seam gate.</strong> Installing pyobjc made
+      <code>capture._check_real_permissions</code> actually run
+      (<code>CGPreflightScreenCaptureAccess</code> / <code>AXIsProcessTrusted</code>); it had silently
+      deferred while the frameworks weren't importable, so every fake-capture test broke in any
+      environment lacking the OS grant. The real probe now runs only when a real capture will: it is
+      skipped under either capture seam (<code>NORM_FAKE_CAPTURE</code> supplies frames,
+      <code>NORM_FORCE_NO_MACAPPTREE</code> forces the backend absent for ENV-001), while
+      <code>NORM_FORCE_NO_PERMISSION</code> still drives the denied path (RECORD-007).
+      <em>Trade-off:</em> the genuine permission probe, like the real backends, is exercised only by a
+      manual smoke run, not the suite.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>
