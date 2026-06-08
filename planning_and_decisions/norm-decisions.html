@@ -580,7 +580,8 @@
       permission — the <code>None</code> check in the capture remains only as a defensive guard for
       access revoked mid-run.</p>
       <p class="rationale"><em>Deferred:</em> on multi-monitor setups the <strong>main</strong> display
-      is always captured rather than the one holding the active window; AX depth is unbounded
+      is always captured rather than the one holding the active window (tracked as
+      <span class="req">REQ-RECORD-010</span>); AX depth is unbounded
       (macapptree's default), relying on the downstream ax_hash normalization (ADR-004).
       <em>Trade-off / risk:</em> the native path can't be exercised deterministically — the suite
       unit-tests the composition glue with the three native probes stubbed, and a real capture is a

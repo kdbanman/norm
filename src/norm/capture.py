@@ -255,8 +255,8 @@ def _screenshot_png() -> bytes:
 
     Returns the encoded PNG bytes; the caller decodes them to the :class:`Frame` image so the
     stored ciphertext and the dedupe image derive from identical bytes. Active-display
-    selection on multi-monitor setups is deferred (ADR-014): the main display is always
-    captured.
+    selection on multi-monitor setups is deferred (REQ-RECORD-010, ADR-014): the main display
+    is always captured.
 
     The authoritative Screen-Recording gate is the preflight in :func:`ensure_available`
     (``CGPreflightScreenCaptureAccess``), run before the store is even unlocked: without the
