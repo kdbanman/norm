@@ -54,7 +54,7 @@ prompt, the `NORM_PASSPHRASE` environment variable, or a `chmod 400` password fi
 | Command | What it does |
 |---|---|
 | `norm init` | Create the encrypted store and provision the model. `--skip-model` to defer the download; `--force` to re-initialize (destroys existing data). |
-| `norm record` | Capture on a timed loop. `--once` for a single frame; `--interval`, `--idle-threshold`, `--phash-threshold` to tune the gate. |
+| `norm record` | Capture on a timed loop. `--once` for a single frame; `--interval`, `--idle-threshold`, `--phash-threshold` to tune how often it captures and when a tick is skipped. |
 | `norm report preprocess` | Summarize sliding windows of captures (`--window`, `--stride`). |
 | `norm report interval` | Aggregate window summaries over a range into one markdown report. `--auto-preprocess` fills gaps first; `--output` writes to a file. |
 | `norm status` | Show store and daemon state. |
@@ -70,7 +70,7 @@ stable `{"error":{...}}` envelope), `-v`/`-q`. Run any command with `--help` for
 
 ## How it works
 
-- **Capture gate.** Each tick skips when you're idle (HID idle ≥ `idle_threshold_seconds`)
+- **Skipping idle and duplicate frames.** Each tick skips when you're idle (HID idle ≥ `idle_threshold_seconds`)
   and deduplicates frames whose screenshot perceptual-hash and AX tree both match the
   previous capture — duplicates extend the prior capture's duration instead of storing a
   new one. On multi-monitor setups the display holding the active window is captured, so
