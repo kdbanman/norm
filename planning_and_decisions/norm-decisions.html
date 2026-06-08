@@ -581,12 +581,55 @@
       access revoked mid-run.</p>
       <p class="rationale"><em>Deferred:</em> on multi-monitor setups the <strong>main</strong> display
       is always captured rather than the one holding the active window (tracked as
-      <span class="req">REQ-RECORD-010</span>); AX depth is unbounded
+      <span class="req">REQ-RECORD-010</span>, resolved in ADR-015); AX depth is unbounded
       (macapptree's default), relying on the downstream ax_hash normalization (ADR-004).
       <em>Trade-off / risk:</em> the native path can't be exercised deterministically — the suite
       unit-tests the composition glue with the three native probes stubbed, and a real capture is a
       single permission-gated smoke test (skipped where Screen Recording / Accessibility aren't
       granted), the same deferred-binding risk ADR-012 names for the mlx-vlm backend.</p>
+    </div>
+  </section>
+
+  <section id="adr-015">
+    <h2>ADR-015 — Active-display capture: a pure window-center hit-test over a thin native display-enumeration seam</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-010</span>
+      · concept §8
+      · ADR-014
+    </p>
+
+    <p><strong>Context.</strong> ADR-014 shipped real capture but deferred multi-monitor: it shot
+    <code>CGMainDisplayID()</code> unconditionally, so when the frontmost window lived on a secondary
+    display the screenshot and the AX tree described <em>different</em> displays — exactly what
+    REQ-RECORD-010 forbids. The native display APIs can't be exercised deterministically, the same
+    bind-only-on-a-real-machine risk ADR-014/ADR-012 name, so the resolution had to keep the
+    decision logic out of the un-testable native layer.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> the screenshot targets the display holding the active
+      window. The window's on-screen rect is read from the <em>same</em> macapptree
+      <code>UIElement</code> the AX tree is serialized from (<code>absolute_position</code> +
+      <code>size</code>), so the shot and the tree provably describe one window — the REQ-RECORD-010
+      "same window/display" criterion holds by construction rather than by a second, possibly
+      divergent, window lookup.</p>
+      <p><strong>Pure selector over a thin seam.</strong> The choice is a pure function
+      (<code>_select_display</code>): the display whose <code>CGDisplayBounds</code> rect contains the
+      window's center, else a fallback. It is unit-tested deterministically with synthetic display
+      rects (REQ-RECORD-010's pass/fail asserted with no real screen). The only native parts are thin,
+      stubbable seams — <code>_online_display_bounds</code> (enumerate via
+      <code>CGGetOnlineDisplayList</code>&nbsp;+&nbsp;<code>CGDisplayBounds</code>) and
+      <code>CGMainDisplayID</code> — covered by a permission-gated smoke test that cross-checks every
+      online display against the OS hit-test (<code>CGGetDisplaysWithPoint</code>).</p>
+      <p class="rationale"><em>Why center-containment, not <code>CGGetDisplaysWithPoint</code> directly:</em>
+      handing the point to the OS would push the whole decision into the un-testable native layer; the
+      pure hit-test keeps it in the suite while approximating how macOS attributes a window to the
+      display holding the bulk of it. It works because AX <code>absolute_position</code> and
+      <code>CGDisplayBounds</code> share one global, top-left-origin coordinate space (main display at
+      the origin), so window and display rects compare with no flip. <em>Fallbacks → main display:</em>
+      unknown window bounds (no AX position/size) or a center over a gap between displays resolve to
+      <code>CGMainDisplayID()</code> rather than guessing, and the single-monitor common case never
+      enumerates displays. AX-depth remains the only standing ADR-014 deferral.</p>
     </div>
   </section>
 

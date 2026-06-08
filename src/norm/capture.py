@@ -182,6 +182,14 @@ def _check_backend() -> None:
 # as text, so the full tree is kept here rather than truncated at capture time.
 _AX_MAX_DEPTH: int | None = None
 
+# A rectangle ``(x, y, w, h)`` in the global, top-left-origin display coordinate space
+# (the main display's top-left is the origin) — the space both AX positions and
+# ``CGDisplayBounds`` report in, so window bounds and display bounds compare directly.
+Bounds = tuple[float, float, float, float]
+
+# An upper bound for CGGetOnlineDisplayList; far more displays than macOS supports.
+_MAX_DISPLAYS = 16
+
 
 def capture_frame() -> Frame:
     """Acquire one frame. Uses the ``NORM_FAKE_CAPTURE`` seam if set, else macapptree."""
@@ -206,17 +214,22 @@ def _fake_frame(dir_path: Path) -> Frame:
 
 
 def _macapptree_frame() -> Frame:
-    """Capture one real frame in-process: the active display + the frontmost app's AX tree.
+    """Capture one real frame in-process: the active window's display + its AX tree.
 
     The screenshot is taken in memory via Quartz and the AX tree is built in memory via
     macapptree's ``UIElement``, so no plaintext capture ever touches disk (REQ-SEC-001) —
     unlike macapptree's CLI, which shells out to ``screencapture`` / ``python -m
     macapptree.main`` and writes temp files. The frontmost app is captured passively (never
     activated), so recording does not steal focus.
+
+    On multi-monitor setups the display holding the frontmost window is shot — not
+    unconditionally the main display — so the screenshot and the AX tree describe the same
+    window (REQ-RECORD-010). The window's on-screen bounds come from the very AX element the
+    tree was built from, keeping the two in lockstep.
     """
     active_app, pid = _frontmost_app()
-    ax = _capture_ax_tree(pid) if pid is not None else {}
-    image_png = _screenshot_png()
+    ax, window_bounds = _capture_ax_tree(pid) if pid is not None else ({}, None)
+    image_png = _screenshot_png(_active_display_id(window_bounds))
     image = Image.open(BytesIO(image_png)).convert("RGB")
     ax_json = json.dumps(ax, ensure_ascii=False).encode("utf-8")
     return Frame(image=image, image_png=image_png, ax=ax, ax_json=ax_json, active_app=active_app)
@@ -232,11 +245,14 @@ def _frontmost_app() -> tuple[str | None, int | None]:
     return app.localizedName(), app.processIdentifier()
 
 
-def _capture_ax_tree(pid: int) -> dict:
-    """The frontmost app's main-window AX tree as a plain dict (empty if it exposes none).
+def _capture_ax_tree(pid: int) -> tuple[dict, Bounds | None]:
+    """The frontmost app's main-window AX tree and that window's on-screen bounds.
 
-    Mirrors macapptree's own ``main``: enumerate the app's AX windows and keep the one with
-    the most descendants — but in-process, without activating the app or writing a file.
+    Returns ``({}, None)`` if the app exposes no windows. Mirrors macapptree's own ``main``:
+    enumerate the app's AX windows and keep the one with the most descendants — but
+    in-process, without activating the app or writing a file. The chosen window's bounds are
+    returned alongside the tree so the screenshot can target the same window's display
+    (REQ-RECORD-010).
     """
     import macapptree.apps as apps  # lazy: heavy pyobjc-backed import
     from macapptree.uielement import UIElement
@@ -244,19 +260,99 @@ def _capture_ax_tree(pid: int) -> dict:
     app_ref = apps.application_for_process_id(pid)
     windows = apps.windows_for_application(app_ref)
     if not windows:
-        return {}
+        return {}, None
     elements = [UIElement(window, max_depth=_AX_MAX_DEPTH) for window in windows]
     main_window = max(elements, key=lambda element: len(element.recursive_children()))
-    return main_window.to_dict()
+    return main_window.to_dict(), _window_bounds(main_window)
 
 
-def _screenshot_png() -> bytes:
-    """A PNG of the main display, captured in memory (no temp file).
+def _window_bounds(element) -> Bounds | None:
+    """``(x, y, w, h)`` of an AX window in the global, top-left-origin coordinate space.
+
+    Reads macapptree's ``absolute_position`` (the unadjusted screen origin) and ``size``;
+    returns ``None`` if either is missing, in which case display selection defaults to the
+    main display. This space matches ``CGDisplayBounds``, so the two compose directly.
+    """
+    position = getattr(element, "absolute_position", None)
+    size = getattr(element, "size", None)
+    if position is None or size is None:
+        return None
+    return (position.x, position.y, size.width, size.height)
+
+
+# ── active-display selection (REQ-RECORD-010) ───────────────────────────────────
+
+
+def _active_display_id(window_bounds: Bounds | None) -> int:
+    """The ``CGDirectDisplayID`` of the display holding the active window.
+
+    Falls back to the main display when the window's bounds are unknown — the common
+    single-monitor case never enumerates displays. The native enumeration is kept behind
+    :func:`_online_display_bounds`; the contains-the-center geometry lives in the pure,
+    unit-tested :func:`_select_display` (REQ-RECORD-010, ADR-014).
+    """
+    main_id = _main_display_id()
+    if window_bounds is None:
+        return main_id
+    return _select_display(window_bounds, _online_display_bounds(), fallback_id=main_id)
+
+
+def _select_display(
+    window_bounds: Bounds | None, displays: list[tuple[int, Bounds]], fallback_id: int
+) -> int:
+    """The id of the display whose rect contains the window's center, else ``fallback_id``.
+
+    Pure geometry over ``displays`` (``[(display_id, (x, y, w, h)), …]``). Falls back when the
+    window's bounds are unknown, or when its center lies over no display (straddling a gap)
+    rather than guessing. Mirrors how macOS attributes a window to the display holding the
+    bulk of it.
+    """
+    if window_bounds is None:
+        return fallback_id
+    x, y, w, h = window_bounds
+    cx, cy = x + w / 2.0, y + h / 2.0
+    for display_id, (dx, dy, dw, dh) in displays:
+        if dx <= cx < dx + dw and dy <= cy < dy + dh:
+            return display_id
+    return fallback_id
+
+
+def _main_display_id() -> int:
+    import Quartz  # lazy
+
+    return Quartz.CGMainDisplayID()
+
+
+def _cg_online_display_ids() -> list[int]:
+    """The ``CGDirectDisplayID``s of all online displays (native)."""
+    import Quartz  # lazy
+
+    err, ids, count = Quartz.CGGetOnlineDisplayList(_MAX_DISPLAYS, None, None)
+    if err != 0:
+        return []
+    return list(ids)[:count]
+
+
+def _online_display_bounds() -> list[tuple[int, Bounds]]:
+    """``[(display_id, (x, y, w, h)), …]`` for every online display (native)."""
+    import Quartz  # lazy
+
+    result: list[tuple[int, Bounds]] = []
+    for display_id in _cg_online_display_ids():
+        rect = Quartz.CGDisplayBounds(display_id)
+        result.append(
+            (display_id, (rect.origin.x, rect.origin.y, rect.size.width, rect.size.height))
+        )
+    return result
+
+
+def _screenshot_png(display_id: int | None = None) -> bytes:
+    """A PNG of one display (the main display by default), captured in memory (no temp file).
 
     Returns the encoded PNG bytes; the caller decodes them to the :class:`Frame` image so the
-    stored ciphertext and the dedupe image derive from identical bytes. Active-display
-    selection on multi-monitor setups is deferred (REQ-RECORD-010, ADR-014): the main display
-    is always captured.
+    stored ciphertext and the dedupe image derive from identical bytes. ``display_id`` selects
+    the display to shoot — the recorder passes the one holding the active window
+    (REQ-RECORD-010).
 
     The authoritative Screen-Recording gate is the preflight in :func:`ensure_available`
     (``CGPreflightScreenCaptureAccess``), run before the store is even unlocked: without the
@@ -268,7 +364,9 @@ def _screenshot_png() -> bytes:
     import AppKit  # lazy
     import Quartz  # lazy
 
-    cg_image = Quartz.CGDisplayCreateImage(Quartz.CGMainDisplayID())
+    if display_id is None:
+        display_id = Quartz.CGMainDisplayID()
+    cg_image = Quartz.CGDisplayCreateImage(display_id)
     if cg_image is None:
         raise errors.permission_missing(
             "Screen Recording permission not granted; enable norm under "
