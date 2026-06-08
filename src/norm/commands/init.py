@@ -5,8 +5,9 @@ empty encrypted index, and ``key.json`` — a fresh 256-bit data key Argon2id-wr
 by the app password (REQ-INIT-001/003, REQ-SEC-007). Refuses to clobber an existing
 store without ``--force`` (REQ-INIT-002). No macOS Keychain is touched.
 
-Model provisioning (downloading the MLX weights, REQ-INIT-004) is wired in a later
-iteration; ``--skip-model`` is accepted and is currently the only behaviour.
+This is the only command that touches the network: unless ``--skip-model`` is given,
+it downloads the configured model's weights into the local cache (REQ-INIT-004) via
+:func:`norm.inference.provision`. ``record`` and ``report`` only ever read that cache.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import sys
 from pathlib import Path
 
 from norm import config as config_mod
-from norm import crypto, errors, passphrase, session
+from norm import crypto, errors, inference, passphrase, session
 from norm import store as store_mod
 
 # Store layout constants live in norm.session (the shared store-access module).
@@ -70,18 +71,21 @@ def run(args: argparse.Namespace) -> int:
     _write_wrapped_key(key_path, crypto.wrap_data_key(data_key, password))
     store_mod.create_index(index_path, data_key)
 
-    config_mod.write_config(config_file, config_mod.default_config(data_dir))
+    config_values = config_mod.default_config(data_dir)
+    config_mod.write_config(config_file, config_values)
     os.chmod(config_file, 0o600)
 
-    if not args.skip_model:
-        # Weight download lands with REQ-INIT-004; until then init always behaves as
-        # --skip-model and says so on stderr rather than silently doing nothing.
-        print(
-            "note: model weights are not downloaded yet; re-run after provisioning",
-            file=sys.stderr,
-        )
+    # Provision the model last (the only network step), matching concept §10.1.
+    model_ref = str(config_values["model"])
+    if args.skip_model:
+        print("note: skipped model download (--skip-model)", file=sys.stderr)
+    else:
+        inference.provision(model_ref)
 
-    print(f"initialized norm store\n  config:   {config_file}\n  data dir: {data_dir}")
+    lines = ["initialized norm store", f"  config:   {config_file}", f"  data dir: {data_dir}"]
+    if not args.skip_model:
+        lines.append(f"  model:    {model_ref}")
+    print("\n".join(lines))
     return int(errors.ExitCode.SUCCESS)
 
 

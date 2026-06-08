@@ -458,6 +458,48 @@
     </div>
   </section>
 
+  <section id="adr-012">
+    <h2>ADR-012 — Model availability is checked inside <code>load_model</code>; a fake-cache seam decides present/absent</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-INIT-004</span>
+      · <span class="req">REQ-PREPROCESS-005</span>
+      · <span class="req">REQ-ARCH-001</span>
+      · concept §10.1, §10.8
+    </p>
+
+    <p><strong>Context.</strong> <code>norm init</code> is the only command allowed to touch the
+    network, and <code>report</code> must fail cleanly (<code>MODEL_UNAVAILABLE</code>, exit&nbsp;4,
+    naming <code>norm init</code>) when weights are absent rather than silently downloading them.
+    Two questions follow: <em>where</em> does report assert availability, and how do the tests
+    exercise "present" vs "absent" without the multi-GB weights or the network. A natural-looking
+    spot is the report command layer, but the idempotent re-run (concept §10.9) loads no model at
+    all — guarding there would force a weights check on a pure no-op.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> <code>inference.ensure_available</code> is called from
+      inside <code>inference.load_model</code>, so the single load path is the single guard: the
+      "0 new windows" re-run, which never loads, correctly needs no weights, while every real load
+      (preprocess and interval gap-fill/aggregate) is checked before any row is written and before
+      any download could happen. A malformed <code>model_ref</code> is rejected first by a
+      dependency-free repo-id shape check (<code>INVALID_MODEL_REF</code>), keeping the 'invalid ref'
+      vs 'not downloaded' distinction (PREPROCESS-005) sound even offline. Tests drive the cache
+      through a hidden <code>NORM_FAKE_MODEL_CACHE=&lt;dir&gt;</code> seam: <code>init</code>
+      "downloads" by dropping a <code>models--org--name</code> marker and
+      <code>ensure_available</code> checks for it. The seam takes precedence over
+      <code>NORM_FAKE_MODEL</code>, so a test can force the 'weights absent' path even with the
+      generate() spy enabled. ARCH-001 is asserted by running a full report in-process under a
+      <code>socket.socket</code>/<code>create_connection</code> guard that fails on any call.</p>
+      <p class="rationale"><code>huggingface_hub</code> (download + offline cache probe) and
+      <code>mlx-vlm</code> stay <em>lazily imported</em>, never hard dependencies — mirroring how the
+      real backend is "finalized alongside" provisioning (the existing <code>_load_backend</code>
+      pattern). <em>Trade-off:</em> the real provisioning/loading paths aren't exercised by the suite
+      (the seams are), so they carry the same deferred-binding risk as the mlx-vlm backend; in return
+      the test environment stays free of the heavy Apple-Silicon ML stack and every report test runs
+      fast and deterministic.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

@@ -23,6 +23,7 @@ Covered:
 * REQ-INTERVAL-003 — uncovered range: --strict errors (exit 5); non-interactive default summarizes.
 * REQ-INTERVAL-004 — --auto-preprocess fills the gap without prompting.
 * REQ-INTERVAL-005 — --output writes the markdown plaintext; the encrypted row is still stored.
+* REQ-GLOBAL-010   — a non-interactive run takes the interactive default, never prompting.
 """
 
 from __future__ import annotations
@@ -355,6 +356,17 @@ def test_interval_noninteractive_default_summarizes_then_reports(store, tmp_path
     records = _trace(trace)
     assert any(r["n_images"] > 0 for r in records)  # window summarized from images
     assert any(r["n_summaries"] > 0 for r in records)  # then aggregated from summaries
+
+
+def test_interval_noninteractive_shows_no_prompt(store, tmp_path):
+    # REQ-GLOBAL-010: with no TTY (stdin closed), the interactive default is taken
+    # automatically — no prompt is shown and the command does not block or error.
+    _seeded(store, tmp_path, 6)  # uncovered range
+    result = store.run("report", "interval", "--last", "24h", extra_env=_fake_model_env(tmp_path / "iv.jsonl"))
+    assert result.returncode == 0, result.stderr
+    assert "summarize now?" not in result.stderr.lower()
+    assert "[y/n]" not in result.stderr.lower()
+    assert _counts(store)["interval_reports"] == 1  # the default (summarize + report) ran
 
 
 # ── REQ-INTERVAL-004: --auto-preprocess fills the gap without prompting ────────
