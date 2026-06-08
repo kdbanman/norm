@@ -378,6 +378,46 @@
     </div>
   </section>
 
+  <section id="adr-010">
+    <h2>ADR-010 — <code>passwd</code> proves the <em>current</em> password from its own sources, not the unlock chain</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-SEC-005</span>
+      · concept §10.18
+    </p>
+
+    <p><strong>Context.</strong> Every other data command resolves the app password through
+    the unlock chain (<code>NORM_PASSPHRASE</code> &gt; chmod-400 <code>~/.norm/passphrase</code>
+    file &gt; interactive prompt), so the obvious move is to reuse it for the <em>old</em>
+    password <code>passwd</code> needs. But rotation is the one operation whose whole point is
+    to <em>change the access gate</em>: if it accepted the same headless sources, an unlocked
+    daemon's environment or its stored passphrase file would silently authorize a rotation by
+    anyone who reached that process — the current password would never actually be proven by a
+    human.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> <code>passwd</code> reads the current password from
+      <code>NORM_OLD_PASSPHRASE</code> or a no-echo prompt <em>only</em> — deliberately no
+      <code>NORM_PASSPHRASE</code> and no passphrase-file fallback (<code>acquire_old_passphrase</code>,
+      distinct from the unlock-path <code>acquire_passphrase</code>). The new password reuses the
+      init confirmation path parameterized to <code>NORM_NEW_PASSPHRASE</code>
+      (<code>acquire_new_passphrase</code>). The old password is then <em>verified by actually
+      unwrapping the data key</em> (not a stored hash compare) before the new one is acquired, so a
+      wrong current password fails (<code>STORE_LOCKED</code>, exit&nbsp;3) before norm ever reads or
+      prompts for a replacement. Rotation re-wraps that same data key under the new password and
+      <code>atomic_write</code>s <code>key.json</code>; blobs and the index are <em>not</em>
+      re-encrypted. The unwrapped key lives only in a scrubbed <code>bytearray</code> (per
+      <span class="req">ADR-007</span>) and nothing plaintext — neither key nor either password — is
+      ever written.</p>
+      <p class="rationale">The two non-interactive seams (<code>NORM_OLD_PASSPHRASE</code> +
+      <code>NORM_NEW_PASSPHRASE</code>) keep scripted rotation possible without widening the
+      authorization surface to the ambient unlock sources. <em>Trade-off:</em> a headless rotation
+      must supply the current password explicitly rather than leaning on the daemon's existing
+      unlock material — intentional friction, since changing the gate is exactly when "whoever can
+      already unlock" is the wrong authority.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

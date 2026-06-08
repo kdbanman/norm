@@ -15,6 +15,7 @@ from norm.commands import config as config_cmd
 from norm.commands import export as export_cmd
 from norm.commands import init as init_cmd
 from norm.commands import list_cmd
+from norm.commands import passwd as passwd_cmd
 from norm.commands import prune as prune_cmd
 from norm.commands import record as record_cmd
 from norm.commands import report as report_cmd
@@ -104,6 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_cmd.configure(parsers["export"])
     prune_cmd.configure(parsers["prune"])
     config_cmd.configure(parsers["config"])
+    passwd_cmd.configure(parsers["passwd"])
 
     return parser
 
