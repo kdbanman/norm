@@ -544,6 +544,51 @@
     </div>
   </section>
 
+  <section id="adr-014">
+    <h2>ADR-014 — Real capture is in-process (Quartz + macapptree's <code>UIElement</code>), not macapptree's CLI</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-RECORD-001</span>
+      · <span class="req">REQ-SEC-001</span>
+      · <span class="req">REQ-ENV-001</span>
+      · <span class="req">REQ-RECORD-007</span>
+      · concept §8
+      · ADR-013
+    </p>
+
+    <p><strong>Context.</strong> With macapptree declared (ADR-013), <code>_macapptree_frame</code> had
+    to become real. macapptree's public API (<code>get_tree_screenshot</code>) is unfit for a passive
+    recorder: it <em>activates</em> the target app (steals focus) and <code>sleep</code>s, shells out
+    to a bare <code>python -m macapptree.main</code> (which won't resolve to the venv interpreter under
+    a launchd daemon), and writes the screenshot and AX JSON to <em>temp files</em> — plaintext
+    capture on disk, which REQ-SEC-001 forbids.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> capture is assembled in-process from macapptree's
+      lower-level pieces and Quartz, never its CLI. The frontmost app is read via
+      <code>NSWorkspace</code> (never activated — no focus change); its main-window AX tree is built
+      with macapptree's <code>UIElement</code> and serialized by <code>to_dict()</code> in memory; the
+      screenshot is taken with <code>CGDisplayCreateImage</code> and encoded to PNG via
+      <code>NSBitmapImageRep</code>, also in memory. No <code>screencapture</code> /
+      <code>python -m</code> subprocess and no temp files, so no plaintext capture ever touches disk
+      (SEC-001). The <code>Frame</code> image is decoded from the very bytes that get encrypted, so the
+      stored blob and the dedupe image are identical.</p>
+      <p><strong>Permission gate.</strong> The authoritative Screen-Recording check is the
+      <code>ensure_available</code> preflight (<code>CGPreflightScreenCaptureAccess</code>), run before
+      the store unlocks (RECORD-007, exit&nbsp;6): without the grant <code>CGDisplayCreateImage</code>
+      returns a <em>black</em> image rather than <code>None</code>, so it cannot self-detect a missing
+      permission — the <code>None</code> check in the capture remains only as a defensive guard for
+      access revoked mid-run.</p>
+      <p class="rationale"><em>Deferred:</em> on multi-monitor setups the <strong>main</strong> display
+      is always captured rather than the one holding the active window; AX depth is unbounded
+      (macapptree's default), relying on the downstream ax_hash normalization (ADR-004).
+      <em>Trade-off / risk:</em> the native path can't be exercised deterministically — the suite
+      unit-tests the composition glue with the three native probes stubbed, and a real capture is a
+      single permission-gated smoke test (skipped where Screen Recording / Accessibility aren't
+      granted), the same deferred-binding risk ADR-012 names for the mlx-vlm backend.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>

@@ -20,9 +20,11 @@ verification.seam_note) let the black-box tests drive this without a real screen
 * ``NORM_FORCE_NO_PERMISSION=screen|ax`` — force a denied permission (RECORD-007);
 * ``NORM_FORCE_NO_MACAPPTREE=1`` — force the dependency absent (ENV-001).
 
-The real macapptree binding (:func:`_macapptree_frame`) is finalized alongside the
-record loop in a later iteration, mirroring how ``init`` deferred the model download;
-until then the seam-driven path is the exercised one.
+The real backend (:func:`_macapptree_frame`) captures in-process: the active display via
+Quartz (in memory) and the frontmost app's AX tree via macapptree's ``UIElement`` — no temp
+files, no ``screencapture`` / ``python -m macapptree.main`` subprocesses, and no focus change
+(the frontmost app is read, never activated). The ``NORM_FAKE_CAPTURE`` seam still drives the
+black-box tests without a real screen.
 """
 
 from __future__ import annotations
@@ -175,6 +177,11 @@ def _check_backend() -> None:
 
 # ── frame acquisition ───────────────────────────────────────────────────────────
 
+# AX traversal depth. None = unbounded (macapptree's default): the captured tree is
+# normalized downstream for the dedupe ax_hash (concept §8, ADR-004) and fed to the model
+# as text, so the full tree is kept here rather than truncated at capture time.
+_AX_MAX_DEPTH: int | None = None
+
 
 def capture_frame() -> Frame:
     """Acquire one frame. Uses the ``NORM_FAKE_CAPTURE`` seam if set, else macapptree."""
@@ -199,9 +206,78 @@ def _fake_frame(dir_path: Path) -> Frame:
 
 
 def _macapptree_frame() -> Frame:
-    # The real macapptree binding lands with the record loop (see module docstring).
-    raise errors.NormError(
-        "MACAPPTREE_BINDING_PENDING",
-        errors.ExitCode.RUNTIME_ERROR,
-        "real macapptree capture is not wired yet; this iteration is seam-tested",
-    )
+    """Capture one real frame in-process: the active display + the frontmost app's AX tree.
+
+    The screenshot is taken in memory via Quartz and the AX tree is built in memory via
+    macapptree's ``UIElement``, so no plaintext capture ever touches disk (REQ-SEC-001) —
+    unlike macapptree's CLI, which shells out to ``screencapture`` / ``python -m
+    macapptree.main`` and writes temp files. The frontmost app is captured passively (never
+    activated), so recording does not steal focus.
+    """
+    active_app, pid = _frontmost_app()
+    ax = _capture_ax_tree(pid) if pid is not None else {}
+    image_png = _screenshot_png()
+    image = Image.open(BytesIO(image_png)).convert("RGB")
+    ax_json = json.dumps(ax, ensure_ascii=False).encode("utf-8")
+    return Frame(image=image, image_png=image_png, ax=ax, ax_json=ax_json, active_app=active_app)
+
+
+def _frontmost_app() -> tuple[str | None, int | None]:
+    """The active application's (localized name, pid) via NSWorkspace, or (None, None)."""
+    import AppKit  # lazy: pyobjc is only needed on a real capture
+
+    app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+    if app is None:
+        return None, None
+    return app.localizedName(), app.processIdentifier()
+
+
+def _capture_ax_tree(pid: int) -> dict:
+    """The frontmost app's main-window AX tree as a plain dict (empty if it exposes none).
+
+    Mirrors macapptree's own ``main``: enumerate the app's AX windows and keep the one with
+    the most descendants — but in-process, without activating the app or writing a file.
+    """
+    import macapptree.apps as apps  # lazy: heavy pyobjc-backed import
+    from macapptree.uielement import UIElement
+
+    app_ref = apps.application_for_process_id(pid)
+    windows = apps.windows_for_application(app_ref)
+    if not windows:
+        return {}
+    elements = [UIElement(window, max_depth=_AX_MAX_DEPTH) for window in windows]
+    main_window = max(elements, key=lambda element: len(element.recursive_children()))
+    return main_window.to_dict()
+
+
+def _screenshot_png() -> bytes:
+    """A PNG of the main display, captured in memory (no temp file).
+
+    Returns the encoded PNG bytes; the caller decodes them to the :class:`Frame` image so the
+    stored ciphertext and the dedupe image derive from identical bytes. Active-display
+    selection on multi-monitor setups is deferred (ADR-014): the main display is always
+    captured.
+
+    The authoritative Screen-Recording gate is the preflight in :func:`ensure_available`
+    (``CGPreflightScreenCaptureAccess``), run before the store is even unlocked: without the
+    grant ``CGDisplayCreateImage`` returns a *black* image rather than ``None``, so it cannot
+    itself detect a missing permission. The ``None`` check here is a defensive secondary guard
+    for access revoked between that preflight and this call, surfaced as the same permission
+    error the preflight raises.
+    """
+    import AppKit  # lazy
+    import Quartz  # lazy
+
+    cg_image = Quartz.CGDisplayCreateImage(Quartz.CGMainDisplayID())
+    if cg_image is None:
+        raise errors.permission_missing(
+            "Screen Recording permission not granted; enable norm under "
+            "System Settings → Privacy & Security and retry"
+        )
+    rep = AppKit.NSBitmapImageRep.alloc().initWithCGImage_(cg_image)
+    data = rep.representationUsingType_properties_(AppKit.NSBitmapImageFileTypePNG, {})
+    if data is None:
+        raise errors.NormError(
+            "CAPTURE_FAILED", errors.ExitCode.RUNTIME_ERROR, "could not encode screenshot as PNG"
+        )
+    return bytes(data)
