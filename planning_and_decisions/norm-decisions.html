@@ -418,6 +418,46 @@
     </div>
   </section>
 
+  <section id="adr-011">
+    <h2>ADR-011 — Security-invariant guards assert on the source via <code>ast</code>, with a subprocess allowlist tripwire</h2>
+    <p class="affects">
+      <span class="label">Affects:</span>
+      <span class="req">REQ-SEC-002</span>
+      · <span class="req">REQ-SEC-003</span>
+      · <span class="req">REQ-SEC-006</span>
+    </p>
+
+    <p><strong>Context.</strong> Three security requirements are negative-space invariants
+    ("norm never reads the login password", "no Keychain item", "no elevated privileges"):
+    there is no positive behavior to drive, so a black-box CLI test can't observe them
+    directly. The tempting shortcut — <code>grep</code> the source for <code>Keychain</code> /
+    <code>LaunchDaemon</code> — is wrong here: those very words appear (intentionally) in
+    docstrings that <em>document</em> the absence, so a text scan flags the comments that
+    promise the invariant holds. Equally, a runtime "did a Keychain item appear?" check would
+    touch the real user's login keychain, making the suite environment-dependent and
+    side-effectful.</p>
+
+    <div class="resolution resolved">
+      <p><span class="decided">Decided</span> <code>tests/test_security_invariants.py</code> parses
+      <code>src/norm</code> with <code>ast</code> and asserts on real <em>code</em>, not text:
+      no forbidden import (<code>keyring</code>/<code>pam</code>/…), no <code>subprocess</code>/
+      <code>os.system</code> whose <code>argv[0]</code> is a Keychain or login-auth tool
+      (<code>security</code>, <code>dscl</code>, <code>sudo</code>, …), and no
+      <code>os.set*id</code> privilege call — so docstring prose is invisible to the guard.
+      SEC-006 ("transient, in-memory") is asserted both black-box (preprocess writes no
+      plaintext PNG/AX under the data dir <em>or</em> an isolated <code>TMPDIR</code>) and
+      below-the-CLI (<code>report._load_window</code> returns in-memory <code>PIL.Image</code>
+      objects and adds no file to the data dir). The static guards' teeth are verified against
+      a planted-violation source tree, since they otherwise pass vacuously.</p>
+      <p class="rationale">A deliberate second assertion narrows the observed shell-outs to an
+      explicit allowlist (<code>ioreg</code>, <code>launchctl</code>) rather than only excluding
+      the forbidden set. <em>Trade-off:</em> adding any new subprocess to norm fails this test
+      until the program is registered — intentional friction that turns "norm grew a shell-out"
+      into a conscious, reviewed change rather than a silent way past the Keychain/privilege
+      guard.</p>
+    </div>
+  </section>
+
 </main>
 </body>
 </html>
