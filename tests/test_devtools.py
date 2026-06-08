@@ -103,6 +103,38 @@ def test_run_once_capture_seam_records_a_frame(tmp_path):
     assert len(json.loads(listed.stdout)) == 1
 
 
+def test_run_env_passthrough_drives_passwd(tmp_path):
+    """`--env` layers extra seams onto a run — the way passwd is driven manually.
+
+    The store is auto-provisioned with the harness passphrase, so that is the
+    NORM_OLD_PASSPHRASE a rotation must supply.
+    """
+    from tools.normdev.harness import PASSPHRASE
+
+    store = NormStore(tmp_path)
+    rotated = run_mod.run_once(
+        store,
+        argv=["passwd"],
+        env={"NORM_OLD_PASSPHRASE": PASSPHRASE, "NORM_NEW_PASSPHRASE": "rotated pw"},
+    )
+    assert rotated.returncode == 0, rotated.stderr
+
+    # the auto-init password no longer unlocks; the rotated one does.
+    assert store.run("list", passphrase=PASSPHRASE).returncode == 3
+    assert store.run("list", passphrase="rotated pw").returncode == 0
+
+
+def test_parse_env_builds_dict_and_rejects_malformed():
+    from tools.normdev import __main__ as cli
+
+    assert cli._parse_env(None) is None
+    assert cli._parse_env(["A=1", "B=x=y"]) == {"A": "1", "B": "x=y"}  # only first '=' splits
+    assert cli._parse_env(["EMPTY="]) == {"EMPTY": ""}  # empty value is allowed
+    for bad in (["noequals"], ["=novalue"]):
+        with pytest.raises(ValueError):
+            cli._parse_env(bad)
+
+
 @pytest.mark.parametrize("keep,should_exist", [(False, False), (True, True)])
 def test_run_main_temp_store_cleanup_honors_keep(tmp_path, monkeypatch, keep, should_exist):
     made = tmp_path / "ephemeral"

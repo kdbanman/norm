@@ -109,12 +109,18 @@ cases; call the module directly for arg-taking forms:
   encrypted store, drive `init`/`record`/`status`/`list` end-to-end through the capture
   seams, check the contract, and tear it down. Replaces ad-hoc `rm -rf /tmp/normsmoke; …`.
 - `uv run python -m tools.normdev run [--base DIR] [--keep] [--capture] [--locked]
-  [--no-init] <norm args>` — run **one arbitrary** `norm` command against an ephemeral,
-  auto-provisioned store (passphrase + fake-capture seams pre-wired); the norm command's
-  stdout is forwarded verbatim so it stays pipeable. `--base DIR` reuses/persists a store
-  across calls for a manual poke-session. The scriptable companion to `smoke` — use it
-  instead of hand-rolling `mkdir /tmp/x; export NORM_PASSPHRASE; norm --config … init; …`
-  to eyeball a new command's behaviour.
+  [--no-init] [--env KEY=VAL ...] <norm args>` — run **one arbitrary** `norm` command
+  against an ephemeral, auto-provisioned store (passphrase + fake-capture seams pre-wired);
+  the norm command's stdout is forwarded verbatim so it stays pipeable. `--base DIR`
+  reuses/persists a store across calls for a manual poke-session. `--env` (repeatable)
+  layers extra seams onto the run — this is how you drive a command needing more than the
+  unlock passphrase, e.g. `passwd`: the store is provisioned with the fixed harness
+  passphrase (printed in the run banner), so pass that as `NORM_OLD_PASSPHRASE` —
+  `normdev run --base DIR --env NORM_OLD_PASSPHRASE='correct horse battery staple'
+  --env NORM_NEW_PASSPHRASE='new pw' passwd` (normdev flags must precede the norm command).
+  The scriptable companion to `smoke` — use it instead of hand-rolling
+  `mkdir /tmp/x; export NORM_PASSPHRASE; norm --config … init; …` to eyeball a new
+  command's behaviour.
 - `make req` / `make req-todo` (`uv run python -m tools.normdev req list [--outstanding]`)
   — list requirements (`✓` = referenced by a test) or just the ones no test covers yet.
 - `uv run python -m tools.normdev req show REQ-XXX-NNN` — full pass/fail criteria for one

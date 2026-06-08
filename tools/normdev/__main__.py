@@ -39,6 +39,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--idle", type=int, default=0, metavar="SECONDS", help="fake idle seconds (with --capture)")
     p_run.add_argument("--locked", action="store_true", help="run with no passphrase (a locked store)")
     p_run.add_argument(
+        "--env",
+        action="append",
+        metavar="KEY=VAL",
+        help="extra env for the run (repeatable), e.g. --env NORM_OLD_PASSPHRASE=… for passwd",
+    )
+    p_run.add_argument(
         "argv",
         nargs=argparse.REMAINDER,
         metavar="-- norm args",
@@ -64,6 +70,23 @@ def _build_parser() -> argparse.ArgumentParser:
     p_dec_show.add_argument("id", help="ADR id, e.g. ADR-006 (or just 6)")
 
     return parser
+
+
+def _parse_env(pairs: list[str] | None) -> dict[str, str] | None:
+    """Turn repeated ``KEY=VAL`` ``--env`` flags into a dict (``None`` if none given).
+
+    Raises ``ValueError`` on a malformed pair (no ``=`` or empty key) so the dispatch
+    can report a usage error rather than silently dropping a seam.
+    """
+    if not pairs:
+        return None
+    env: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise ValueError(f"--env expects KEY=VAL, got {pair!r}")
+        env[key] = value
+    return env
 
 
 def _cmd_req_list(category: str | None, outstanding: bool) -> int:
@@ -137,6 +160,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "smoke":
         return smoke_mod.main(keep=args.keep, base=args.base)
     if args.command == "run":
+        try:
+            env = _parse_env(args.env)
+        except ValueError as exc:
+            print(f"normdev run: {exc}", file=sys.stderr)
+            return 2
         return run_mod.main(
             base=args.base,
             keep=args.keep,
@@ -144,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
             capture=args.capture,
             idle=args.idle,
             locked=args.locked,
+            env=env,
             argv=args.argv,
         )
     if args.command == "req":

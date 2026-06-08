@@ -11,7 +11,12 @@ norm --config … init; norm --config … <cmd>`` when poking at a new subcomman
 * the store is auto-provisioned on first use (``--no-init`` to skip, e.g. to observe
   not-initialized behaviour or to run ``init`` yourself);
 * ``--capture`` injects a fabricated frame so ``record`` works with no real screen;
-  ``--locked`` runs with no passphrase to exercise the locked-store paths.
+  ``--locked`` runs with no passphrase to exercise the locked-store paths;
+* ``--env KEY=VAL`` (repeatable) layers extra environment onto the run, for commands
+  that read seams beyond the passphrase — e.g. driving ``passwd`` with
+  ``--env NORM_OLD_PASSPHRASE=… --env NORM_NEW_PASSPHRASE=…``. The store is
+  provisioned with the fixed harness passphrase (printed in the run banner), so that
+  is the ``NORM_OLD_PASSPHRASE`` to hand a rotation.
 
 The norm command's stdout is forwarded verbatim (normdev's own chatter goes to
 stderr), so ``normdev run config get interval_minutes`` stays pipeable.
@@ -35,21 +40,27 @@ def run_once(
     capture: bool = False,
     idle: int = 0,
     locked: bool = False,
+    env: dict[str, str] | None = None,
     argv: list[str],
 ) -> subprocess.CompletedProcess[str]:
     """Provision ``store`` if needed, then run ``norm <argv>`` against it.
 
     Returns the command's ``CompletedProcess`` (or the failing ``init``'s, if
-    auto-provisioning fails). The passphrase is omitted when ``locked``.
+    auto-provisioning fails). The passphrase is omitted when ``locked``; ``env``
+    layers extra seams on top (and wins over the capture seam on key collisions).
     """
     if not no_init and not store.is_initialized():
         provisioned = store.run("init", "--skip-model", passphrase=PASSPHRASE)
         if provisioned.returncode != 0:
             return provisioned
 
-    extra_env = capture_env(write_fake_frame(store.base / "frames"), idle=str(idle)) if capture else None
+    extra_env: dict[str, str] = {}
+    if capture:
+        extra_env.update(capture_env(write_fake_frame(store.base / "frames"), idle=str(idle)))
+    if env:
+        extra_env.update(env)
     passphrase = None if locked else PASSPHRASE
-    return store.run(*argv, passphrase=passphrase, extra_env=extra_env)
+    return store.run(*argv, passphrase=passphrase, extra_env=extra_env or None)
 
 
 def main(
@@ -60,6 +71,7 @@ def main(
     capture: bool = False,
     idle: int = 0,
     locked: bool = False,
+    env: dict[str, str] | None = None,
     argv: list[str],
 ) -> int:
     """Set up the store (temp unless ``base``), run the command, forward its output."""
@@ -72,7 +84,11 @@ def main(
     created = base is None
     root = Path(base) if base else Path(tempfile.mkdtemp(prefix="norm-run-"))
     root.mkdir(parents=True, exist_ok=True)
-    print(f"run store: {root}", file=sys.stderr)
+    # Surface the store's app password: it's the fixed harness constant, not anything
+    # the caller chose, so a command needing the *current* password (passwd) knows
+    # what to pass as NORM_OLD_PASSPHRASE.
+    creds = "locked (no passphrase)" if locked else f"app password: {PASSPHRASE!r}"
+    print(f"run store: {root}  [{creds}]", file=sys.stderr)
     try:
         result = run_once(
             NormStore(root),
@@ -80,6 +96,7 @@ def main(
             capture=capture,
             idle=idle,
             locked=locked,
+            env=env,
             argv=list(argv),
         )
         sys.stdout.write(result.stdout)
